@@ -1,16 +1,54 @@
 ﻿#include <Windows.h>
 #include <cstdint>
+#include "MinHook.h"
+#include <chrono>
 
-struct Config {
+struct Config 
+{
     int Width = 1920;
     int Height = 1080;
     int Aspect = 1;
     int FOV = 100;
 };
 
+LARGE_INTEGER gFrequency;
+LARGE_INTEGER gLastTime;
+
+double gTargetFrameTime = 0.0;
+
+bool gSpeedhackEnabled = true;
+double gSpeedMultiplier = 1.0;
+double BaseFPS = 60.0;
+
+LARGE_INTEGER gFakeTime = {};
+LARGE_INTEGER gStartReal = {};
+
 Config cfg;
 
-void LoadConfig() {
+//Хук QueryPerformanceCounter
+typedef BOOL(WINAPI* QPC_t)(LARGE_INTEGER*);
+QPC_t oQPC = nullptr;
+
+BOOL WINAPI hkQPC(LARGE_INTEGER* lpPerformanceCount) 
+{
+    BOOL result = oQPC(lpPerformanceCount);
+
+    if (!gSpeedhackEnabled)
+        return result;
+
+    LARGE_INTEGER realNow = *lpPerformanceCount;
+
+    double realDelta = (double)(realNow.QuadPart - gStartReal.QuadPart);
+
+    double scaledDelta = realDelta * gSpeedMultiplier;
+
+    lpPerformanceCount->QuadPart = gStartReal.QuadPart + (LONGLONG)scaledDelta;
+
+    return result;
+}
+
+void LoadConfig() 
+{
     char path[MAX_PATH];
     GetModuleFileNameA(NULL, path, MAX_PATH);
 
@@ -25,14 +63,66 @@ void LoadConfig() {
     cfg.FOV = GetPrivateProfileIntA("MAIN", "FOV", 100, path);
 }
 
-void WriteBytes(void* address, void* data, size_t size) {
+//Хук установки
+void HookTime() 
+{
+    HMODULE hKernel = GetModuleHandleA("kernel32.dll");
+
+    void* addr = GetProcAddress(hKernel, "QueryPerformanceCounter");
+
+    MH_CreateHook(addr, &hkQPC, (void**)&oQPC);
+    MH_EnableHook(addr);
+
+    QueryPerformanceCounter(&gStartReal);
+}
+
+void InitFPSLimiter(int fps) 
+{
+    QueryPerformanceFrequency(&gFrequency);
+    QueryPerformanceCounter(&gLastTime);
+
+    gTargetFrameTime = 1.0 / (double)fps;
+}
+
+void FrameLimiter() 
+{
+    LARGE_INTEGER currentTime;
+    QueryPerformanceCounter(&currentTime);
+
+    double elapsed = (double)(currentTime.QuadPart - gLastTime.QuadPart) / gFrequency.QuadPart;
+
+    double currentFPS = 1.0 / elapsed;
+
+    // динамический множитель
+    gSpeedMultiplier = currentFPS / (double)BaseFPS;
+
+    if (elapsed < gTargetFrameTime) {
+        double remaining = gTargetFrameTime - elapsed;
+
+        if (remaining > 0.002) {
+            DWORD sleepTime = (DWORD)((remaining - 0.001) * 1000);
+            Sleep(sleepTime);
+        }
+
+        do {
+            QueryPerformanceCounter(&currentTime);
+            elapsed = (double)(currentTime.QuadPart - gLastTime.QuadPart) / gFrequency.QuadPart;
+        } while (elapsed < gTargetFrameTime);
+    }
+
+    gLastTime = currentTime;
+}
+
+void WriteBytes(void* address, void* data, size_t size) 
+{
     DWORD oldProtect;
     VirtualProtect(address, size, PAGE_EXECUTE_READWRITE, &oldProtect);
     memcpy(address, data, size);
     VirtualProtect(address, size, oldProtect, &oldProtect);
 }
 
-void ApplyAspect() {
+void ApplyAspect() 
+{
     // Адреса
     void* addr1 = (void*)0x405D65;
     void* addr2 = (void*)0x4DD915;
@@ -59,14 +149,16 @@ void ApplyAspect() {
     }
 }
 
-void ApplyFOV() {
+void ApplyFOV()
+{
     void* addr = (void*)0x405D6F;
 
     int value = cfg.FOV;
     WriteBytes(addr, &value, 1);
 }
 
-void ApplyResolution() {
+void ApplyResolution() 
+{
     uint16_t width = (uint16_t)cfg.Width;
     uint16_t height = (uint16_t)cfg.Height;
 
@@ -87,7 +179,8 @@ void ApplyResolution() {
     *height2 = height;
 }
 
-DWORD WINAPI InitThread(LPVOID) {
+DWORD WINAPI InitThread(LPVOID) 
+{
     //Sleep(500);
 
     LoadConfig();
@@ -101,10 +194,12 @@ DWORD WINAPI InitThread(LPVOID) {
 
 BOOL APIENTRY DllMain(HMODULE hModule,
     DWORD reason,
-    LPVOID) {
+    LPVOID) 
+{
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
         CreateThread(nullptr, 0, InitThread, nullptr, 0, nullptr);
     }
     return TRUE;
 }
+
