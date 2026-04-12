@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <chrono>
 #include "MinHook.h"
+#pragma comment (lib, "winmm.lib")
 
 
 // ================= CONFIG =================
@@ -34,28 +35,28 @@ void InitFPS()
     gTargetFrameTime = 1.0 / cfg.FPSLimit;
 }
 
-double FrameLimiter() 
-{
-    LARGE_INTEGER now;
-    QueryPerformanceCounter(&now);
-
-    double elapsed = (double)(now.QuadPart - gLast.QuadPart) / gFreq.QuadPart;
-
-    if (elapsed < gTargetFrameTime) {
-        double remain = gTargetFrameTime - elapsed;
-
-        if (remain > 0.002)
-            Sleep((DWORD)((remain - 0.001) * 1000));
-
-        do {
-            QueryPerformanceCounter(&now);
-            elapsed = (double)(now.QuadPart - gLast.QuadPart) / gFreq.QuadPart;
-        } while (elapsed < gTargetFrameTime);
-    }
-
-    gLast = now;
-    return elapsed;
-}
+//double FrameLimiter() 
+//{
+//    LARGE_INTEGER now;
+//    QueryPerformanceCounter(&now);
+//
+//    double elapsed = (double)(now.QuadPart - gLast.QuadPart) / gFreq.QuadPart;
+//
+//    if (elapsed < gTargetFrameTime) {
+//        double remain = gTargetFrameTime - elapsed;
+//
+//        if (remain > 0.002)
+//            Sleep((DWORD)((remain - 0.001) * 1000));
+//
+//        do {
+//            QueryPerformanceCounter(&now);
+//            elapsed = (double)(now.QuadPart - gLast.QuadPart) / gFreq.QuadPart;
+//        } while (elapsed < gTargetFrameTime);
+//    }
+//
+//    gLast = now;
+//    return elapsed;
+//}
 
 // ================= SPEEDHACK =================
 
@@ -95,125 +96,14 @@ void HookTime()
 
 // ================= D3D HOOKS =================
 
-typedef IDirect3D9* (WINAPI* Direct3DCreate9_t)(UINT);
-Direct3DCreate9_t oDirect3DCreate9 = nullptr;
-
-typedef HRESULT(__stdcall* Present9_t)(IDirect3DDevice9*, const RECT*, const RECT*, HWND, const RGNDATA*);
-Present9_t oPresent9 = nullptr;
-
-// ---- DX9
-HRESULT __stdcall hkPresent9(IDirect3DDevice9* dev, const RECT* a, const RECT* b, HWND c, const RGNDATA* d) {
-    double dt = FrameLimiter();
-
-    if (cfg.SpeedEnable) {
-        double fps = 1.0 / dt;
-        gSpeedMultiplier = fps / (double)cfg.BaseFPS;
-    }
-
-    return oPresent9(dev, a, b, c, d);
-}
-
-//typedef HRESULT(__stdcall* Present8_t)(IDirect3DDevice8*, const RECT*, const RECT*, HWND, const RGNDATA*);
-//Present8_t oPresent8 = nullptr;
-
-typedef HRESULT(__stdcall* CreateDevice_t)(
-    IDirect3D9*,
-    UINT,
-    D3DDEVTYPE,
-    HWND,
-    DWORD,
-    D3DPRESENT_PARAMETERS*,
-    IDirect3DDevice9**
-    );
-
-CreateDevice_t oCreateDevice9 = nullptr;
-
-HRESULT __stdcall hkCreateDevice9(
-    IDirect3D9* self,
-    UINT Adapter,
-    D3DDEVTYPE Type,
-    HWND hFocusWindow,
-    DWORD BehaviorFlags,
-    D3DPRESENT_PARAMETERS* pPresentationParameters,
-    IDirect3DDevice9** ppReturnedDeviceInterface)
-{
-    HRESULT hr = oCreateDevice9(
-        self, Adapter, Type, hFocusWindow,
-        BehaviorFlags, pPresentationParameters,
-        ppReturnedDeviceInterface
-    );
-
-    if (SUCCEEDED(hr) && ppReturnedDeviceInterface && *ppReturnedDeviceInterface) {
-        void** vtable = *reinterpret_cast<void***>(*ppReturnedDeviceInterface);
-
-        MH_CreateHook(vtable[17], &hkPresent9, (void**)&oPresent9);
-        MH_EnableHook(vtable[17]);
-    }
-
-    return hr;
-}
-
-IDirect3D9* WINAPI hkDirect3DCreate9(UINT SDKVersion) {
-    IDirect3D9* d3d = oDirect3DCreate9(SDKVersion);
-
-    if (d3d) {
-        void** vtable = *reinterpret_cast<void***>(d3d);
-
-        MH_CreateHook(vtable[16], &hkCreateDevice9, (void**)&oCreateDevice9);
-        MH_EnableHook(vtable[16]);
-    }
-
-    return d3d;
-}
-
-void HookD3D9Real() {
-    HMODULE hD3D9 = GetModuleHandleA("d3d9.dll");
-    if (!hD3D9) return;
-
-    void* addr = GetProcAddress(hD3D9, "Direct3DCreate9");
-
-    MH_CreateHook(addr, &hkDirect3DCreate9, (void**)&oDirect3DCreate9);
-    MH_EnableHook(addr);
-}
-
-void HookD3D9Present() {
-    IDirect3D9* d3d = Direct3DCreate9(D3D_SDK_VERSION);
-    if (!d3d) return;
-
-    D3DPRESENT_PARAMETERS pp = {};
-    pp.Windowed = TRUE;
-    pp.SwapEffect = D3DSWAPEFFECT_DISCARD;
-    pp.hDeviceWindow = GetForegroundWindow();
-
-    IDirect3DDevice9* dev = nullptr;
-
-    if (FAILED(d3d->CreateDevice(
-        D3DADAPTER_DEFAULT,
-        D3DDEVTYPE_HAL,
-        pp.hDeviceWindow,
-        D3DCREATE_SOFTWARE_VERTEXPROCESSING,
-        &pp,
-        &dev)))
-    {
-        d3d->Release();
-        return;
-    }
-
-    void** vtable = *reinterpret_cast<void***>(dev);
-
-    void* presentAddr = vtable[17];
-
-    // 🔥 ВАЖНО: глобальный хук
-    MH_CreateHook(presentAddr, &hkPresent9, (void**)&oPresent9);
-    MH_EnableHook(presentAddr);
-
-    dev->Release();
-    d3d->Release();
-}
-
-//---- DX8
-//HRESULT __stdcall hkPresent8(IDirect3DDevice8* dev, const RECT* a, const RECT* b, HWND c, const RGNDATA* d) 
-//{
+//typedef IDirect3D9* (WINAPI* Direct3DCreate9_t)(UINT);
+//Direct3DCreate9_t oDirect3DCreate9 = nullptr;
+//
+//typedef HRESULT(__stdcall* Present9_t)(IDirect3DDevice9*, const RECT*, const RECT*, HWND, const RGNDATA*);
+//Present9_t oPresent9 = nullptr;
+//
+//// ---- DX9
+//HRESULT __stdcall hkPresent9(IDirect3DDevice9* dev, const RECT* a, const RECT* b, HWND c, const RGNDATA* d) {
 //    double dt = FrameLimiter();
 //
 //    if (cfg.SpeedEnable) {
@@ -221,12 +111,71 @@ void HookD3D9Present() {
 //        gSpeedMultiplier = fps / (double)cfg.BaseFPS;
 //    }
 //
-//    return oPresent8(dev, a, b, c, d);
+//    return oPresent9(dev, a, b, c, d);
+//}
+//
+//
+//typedef HRESULT(__stdcall* CreateDevice_t)(
+//    IDirect3D9*,
+//    UINT,
+//    D3DDEVTYPE,
+//    HWND,
+//    DWORD,
+//    D3DPRESENT_PARAMETERS*,
+//    IDirect3DDevice9**
+//    );
+//
+//CreateDevice_t oCreateDevice9 = nullptr;
+//
+//HRESULT __stdcall hkCreateDevice9(
+//    IDirect3D9* self,
+//    UINT Adapter,
+//    D3DDEVTYPE Type,
+//    HWND hFocusWindow,
+//    DWORD BehaviorFlags,
+//    D3DPRESENT_PARAMETERS* pPresentationParameters,
+//    IDirect3DDevice9** ppReturnedDeviceInterface)
+//{
+//    HRESULT hr = oCreateDevice9(
+//        self, Adapter, Type, hFocusWindow,
+//        BehaviorFlags, pPresentationParameters,
+//        ppReturnedDeviceInterface
+//    );
+//
+//    if (SUCCEEDED(hr) && ppReturnedDeviceInterface && *ppReturnedDeviceInterface) {
+//        void** vtable = *reinterpret_cast<void***>(*ppReturnedDeviceInterface);
+//
+//        MH_CreateHook(vtable[17], &hkPresent9, (void**)&oPresent9);
+//        MH_EnableHook(vtable[17]);
+//    }
+//
+//    return hr;
+//}
+//
+//IDirect3D9* WINAPI hkDirect3DCreate9(UINT SDKVersion) {
+//    IDirect3D9* d3d = oDirect3DCreate9(SDKVersion);
+//
+//    if (d3d) {
+//        void** vtable = *reinterpret_cast<void***>(d3d);
+//
+//        MH_CreateHook(vtable[16], &hkCreateDevice9, (void**)&oCreateDevice9);
+//        MH_EnableHook(vtable[16]);
+//    }
+//
+//    return d3d;
 //}
 
-// ---- Hook DX9
-//void HookD3D9() 
-//{
+//void HookD3D9Real() {
+//    HMODULE hD3D9 = GetModuleHandleA("d3d9.dll");
+//    if (!hD3D9) return;
+//
+//    void* addr = GetProcAddress(hD3D9, "Direct3DCreate9");
+//
+//    MH_CreateHook(addr, &hkDirect3DCreate9, (void**)&oDirect3DCreate9);
+//    MH_EnableHook(addr);
+//}
+//
+//void HookD3D9Present() {
 //    IDirect3D9* d3d = Direct3DCreate9(D3D_SDK_VERSION);
 //    if (!d3d) return;
 //
@@ -237,55 +186,63 @@ void HookD3D9Present() {
 //
 //    IDirect3DDevice9* dev = nullptr;
 //
-//    if (d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL,
-//        pp.hDeviceWindow, D3DCREATE_SOFTWARE_VERTEXPROCESSING,
-//        &pp, &dev) < 0) {
+//    if (FAILED(d3d->CreateDevice(
+//        D3DADAPTER_DEFAULT,
+//        D3DDEVTYPE_HAL,
+//        pp.hDeviceWindow,
+//        D3DCREATE_SOFTWARE_VERTEXPROCESSING,
+//        &pp,
+//        &dev)))
+//    {
 //        d3d->Release();
 //        return;
 //    }
 //
 //    void** vtable = *reinterpret_cast<void***>(dev);
 //
-//    MH_CreateHook(vtable[17], &hkPresent9, (void**)&oPresent9);
-//    MH_EnableHook(vtable[17]);
+//    void* presentAddr = vtable[17];
+//
+//    // 🔥 ВАЖНО: глобальный хук
+//    MH_CreateHook(presentAddr, &hkPresent9, (void**)&oPresent9);
+//    MH_EnableHook(presentAddr);
 //
 //    dev->Release();
 //    d3d->Release();
-//
 //}
 
-// ---- Hook DX8
-//void HookD3D8() 
-//{
-//    IDirect3D8* d3d = Direct3DCreate8(D3D_SDK_VERSION);
-//    if (!d3d) return;
-//
-//    D3DDISPLAYMODE mode;
-//    d3d->GetAdapterDisplayMode(D3DADAPTER_DEFAULT, &mode);
-//
-//    D3DPRESENT_PARAMETERS pp = {};
-//    pp.Windowed = TRUE;
-//    pp.SwapEffect = D3DSWAPEFFECT_DISCARD;
-//    pp.BackBufferFormat = mode.Format;
-//
-//    HWND hwnd = GetForegroundWindow();
-//    IDirect3DDevice8* dev = nullptr;
-//
-//    if (d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL,
-//        hwnd, D3DCREATE_SOFTWARE_VERTEXPROCESSING,
-//        &pp, &dev) < 0) {
-//        d3d->Release();
-//        return;
-//    }
-//
-//    void** vtable = *reinterpret_cast<void***>(dev);
-//
-//    MH_CreateHook(vtable[15], &hkPresent8, (void**)&oPresent8);
-//    MH_EnableHook(vtable[15]);
-//
-//    dev->Release();
-//    d3d->Release();
-//}
+void GlobalLimiter() {
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+
+    double elapsed = (double)(now.QuadPart - gLast.QuadPart) / gFreq.QuadPart;
+
+    if (elapsed < gTargetFrameTime) {
+        double remain = gTargetFrameTime - elapsed;
+
+        if (remain > 0.002)
+            Sleep((DWORD)((remain - 0.001) * 1000));
+
+        do {
+            QueryPerformanceCounter(&now);
+            elapsed = (double)(now.QuadPart - gLast.QuadPart) / gFreq.QuadPart;
+        } while (elapsed < gTargetFrameTime);
+    }
+
+    gLast = now;
+
+    // Speedhack
+    if (cfg.SpeedEnable) {
+        double fps = 1.0 / elapsed;
+        gSpeedMultiplier = fps / (double)cfg.BaseFPS;
+    }
+}
+
+DWORD WINAPI LimiterThread(LPVOID) {
+    while (true) {
+        GlobalLimiter();
+    }
+}
+
 
 // ================= MEMORY PATCH =================
 
@@ -342,7 +299,9 @@ void LoadConfig()
 
 DWORD WINAPI InitThread(LPVOID) 
 {
+    timeBeginPeriod(1);
     
+
     LoadConfig();
 
     ApplyFixes();
@@ -355,11 +314,7 @@ DWORD WINAPI InitThread(LPVOID)
 
     HookTime();
     
-    while (!GetModuleHandleA("d3d9.dll")) {
-        Sleep(100);
-    }
-
-    HookD3D9Present();
+    CreateThread(0, 0, LimiterThread, 0, 0, 0);
 
     return 0;
 }
