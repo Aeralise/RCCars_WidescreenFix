@@ -1,205 +1,275 @@
 ﻿#include <Windows.h>
+//#include <d3d8.h>
+#include <d3d9.h>
 #include <cstdint>
-#include "MinHook.h"
 #include <chrono>
+#include "MinHook.h"
 
-struct Config 
-{
+
+// ================= CONFIG =================
+
+struct Config {
     int Width = 1920;
     int Height = 1080;
     int Aspect = 1;
     int FOV = 100;
+
+    int FPSLimit = 60;
+
+    int SpeedEnable = 1;
+    int BaseFPS = 60;
 };
-
-LARGE_INTEGER gFrequency;
-LARGE_INTEGER gLastTime;
-
-double gTargetFrameTime = 0.0;
-
-bool gSpeedhackEnabled = true;
-double gSpeedMultiplier = 1.0;
-double BaseFPS = 60.0;
-
-LARGE_INTEGER gFakeTime = {};
-LARGE_INTEGER gStartReal = {};
 
 Config cfg;
 
-//Хук QueryPerformanceCounter
+// ================= FPS LIMITER =================
+
+LARGE_INTEGER gFreq, gLast;
+double gTargetFrameTime = 0.0;
+
+void InitFPS() 
+{
+    QueryPerformanceFrequency(&gFreq);
+    QueryPerformanceCounter(&gLast);
+    gTargetFrameTime = 1.0 / cfg.FPSLimit;
+}
+
+double FrameLimiter() 
+{
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+
+    double elapsed = (double)(now.QuadPart - gLast.QuadPart) / gFreq.QuadPart;
+
+    if (elapsed < gTargetFrameTime) {
+        double remain = gTargetFrameTime - elapsed;
+
+        if (remain > 0.002)
+            Sleep((DWORD)((remain - 0.001) * 1000));
+
+        do {
+            QueryPerformanceCounter(&now);
+            elapsed = (double)(now.QuadPart - gLast.QuadPart) / gFreq.QuadPart;
+        } while (elapsed < gTargetFrameTime);
+    }
+
+    gLast = now;
+    return elapsed;
+}
+
+// ================= SPEEDHACK =================
+
 typedef BOOL(WINAPI* QPC_t)(LARGE_INTEGER*);
 QPC_t oQPC = nullptr;
 
-BOOL WINAPI hkQPC(LARGE_INTEGER* lpPerformanceCount) 
+double gSpeedMultiplier = 1.0;
+LARGE_INTEGER gStartReal;
+
+BOOL WINAPI hkQPC(LARGE_INTEGER* lp) 
 {
-    BOOL result = oQPC(lpPerformanceCount);
+    BOOL ret = oQPC(lp);
 
-    if (!gSpeedhackEnabled)
-        return result;
+    if (!cfg.SpeedEnable)
+        return ret;
 
-    LARGE_INTEGER realNow = *lpPerformanceCount;
+    LARGE_INTEGER now = *lp;
 
-    double realDelta = (double)(realNow.QuadPart - gStartReal.QuadPart);
+    double delta = (double)(now.QuadPart - gStartReal.QuadPart);
+    delta *= gSpeedMultiplier;
 
-    double scaledDelta = realDelta * gSpeedMultiplier;
+    lp->QuadPart = gStartReal.QuadPart + (LONGLONG)delta;
 
-    lpPerformanceCount->QuadPart = gStartReal.QuadPart + (LONGLONG)scaledDelta;
-
-    return result;
+    return ret;
 }
+
+void HookTime() 
+{
+    MH_CreateHook(GetProcAddress(GetModuleHandleA("kernel32.dll"),
+        "QueryPerformanceCounter"),
+        &hkQPC, (void**)&oQPC);
+
+    MH_EnableHook(MH_ALL_HOOKS);
+
+    QueryPerformanceCounter(&gStartReal);
+}
+
+// ================= D3D HOOKS =================
+
+typedef HRESULT(__stdcall* Present9_t)(IDirect3DDevice9*, const RECT*, const RECT*, HWND, const RGNDATA*);
+Present9_t oPresent9 = nullptr;
+
+//typedef HRESULT(__stdcall* Present8_t)(IDirect3DDevice8*, const RECT*, const RECT*, HWND, const RGNDATA*);
+//Present8_t oPresent8 = nullptr;
+
+//---- DX9
+HRESULT __stdcall hkPresent9(IDirect3DDevice9* dev, const RECT* a, const RECT* b, HWND c, const RGNDATA* d) {
+    double dt = FrameLimiter();
+
+    if (cfg.SpeedEnable) {
+        double fps = 1.0 / dt;
+        gSpeedMultiplier = fps / (double)cfg.BaseFPS;
+    }
+
+    return oPresent9(dev, a, b, c, d);
+}
+
+//---- DX8
+//HRESULT __stdcall hkPresent8(IDirect3DDevice8* dev, const RECT* a, const RECT* b, HWND c, const RGNDATA* d) 
+//{
+//    double dt = FrameLimiter();
+//
+//    if (cfg.SpeedEnable) {
+//        double fps = 1.0 / dt;
+//        gSpeedMultiplier = fps / (double)cfg.BaseFPS;
+//    }
+//
+//    return oPresent8(dev, a, b, c, d);
+//}
+
+// ---- Hook DX9
+void HookD3D9() 
+{
+    IDirect3D9* d3d = Direct3DCreate9(D3D_SDK_VERSION);
+    if (!d3d) return;
+
+    D3DPRESENT_PARAMETERS pp = {};
+    pp.Windowed = TRUE;
+    pp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+    pp.hDeviceWindow = GetForegroundWindow();
+
+    IDirect3DDevice9* dev = nullptr;
+
+    if (d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL,
+        pp.hDeviceWindow, D3DCREATE_SOFTWARE_VERTEXPROCESSING,
+        &pp, &dev) < 0) {
+        d3d->Release();
+        return;
+    }
+
+    void** vtable = *reinterpret_cast<void***>(dev);
+
+    MH_CreateHook(vtable[17], &hkPresent9, (void**)&oPresent9);
+    MH_EnableHook(vtable[17]);
+
+    dev->Release();
+    d3d->Release();
+}
+
+// ---- Hook DX8
+//void HookD3D8() 
+//{
+//    IDirect3D8* d3d = Direct3DCreate8(D3D_SDK_VERSION);
+//    if (!d3d) return;
+//
+//    D3DDISPLAYMODE mode;
+//    d3d->GetAdapterDisplayMode(D3DADAPTER_DEFAULT, &mode);
+//
+//    D3DPRESENT_PARAMETERS pp = {};
+//    pp.Windowed = TRUE;
+//    pp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+//    pp.BackBufferFormat = mode.Format;
+//
+//    HWND hwnd = GetForegroundWindow();
+//    IDirect3DDevice8* dev = nullptr;
+//
+//    if (d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL,
+//        hwnd, D3DCREATE_SOFTWARE_VERTEXPROCESSING,
+//        &pp, &dev) < 0) {
+//        d3d->Release();
+//        return;
+//    }
+//
+//    void** vtable = *reinterpret_cast<void***>(dev);
+//
+//    MH_CreateHook(vtable[15], &hkPresent8, (void**)&oPresent8);
+//    MH_EnableHook(vtable[15]);
+//
+//    dev->Release();
+//    d3d->Release();
+//}
+
+// ================= MEMORY PATCH =================
+
+void Write(void* addr, void* data, size_t size) 
+{
+    DWORD old;
+    VirtualProtect(addr, size, PAGE_EXECUTE_READWRITE, &old);
+    memcpy(addr, data, size);
+    VirtualProtect(addr, size, old, &old);
+}
+
+void ApplyFixes() 
+{
+    // Resolution
+    uint16_t w = (uint16_t)cfg.Width;
+    uint16_t h = (uint16_t)cfg.Height;
+
+    Write((void*)0x4A6A0D, &w, 2);
+    Write((void*)0x4A69D3, &w, 2);
+    Write((void*)0x4A6A08, &h, 2);
+    Write((void*)0x4A69CE, &h, 2);
+
+    // Aspect (байтовый патч)
+    uint8_t val = (cfg.Aspect == 1) ? 0x10 : (cfg.Aspect == 2) ? 0x40 : 0x10;
+
+    Write((void*)0x405D65, &val, 1);
+    Write((void*)0x4DD915, &val, 1);
+    Write((void*)0x4DD9B6, &val, 1);
+
+    // FOV
+    Write((void*)0x405D6F, &cfg.FOV, 1);
+}
+
+// ================= INIT =================
 
 void LoadConfig() 
 {
     char path[MAX_PATH];
     GetModuleFileNameA(NULL, path, MAX_PATH);
-
     char* slash = strrchr(path, '\\');
     if (slash) *(slash + 1) = '\0';
-
     strcat_s(path, "RCCars_WidescreenFix.ini");
 
     cfg.Width = GetPrivateProfileIntA("MAIN", "Width", 1920, path);
     cfg.Height = GetPrivateProfileIntA("MAIN", "Height", 1080, path);
     cfg.Aspect = GetPrivateProfileIntA("MAIN", "Aspect", 1, path);
     cfg.FOV = GetPrivateProfileIntA("MAIN", "FOV", 100, path);
-}
 
-//Хук установки
-void HookTime() 
-{
-    HMODULE hKernel = GetModuleHandleA("kernel32.dll");
+    cfg.FPSLimit = GetPrivateProfileIntA("FPS", "Limit", 60, path);
 
-    void* addr = GetProcAddress(hKernel, "QueryPerformanceCounter");
-
-    MH_CreateHook(addr, &hkQPC, (void**)&oQPC);
-    MH_EnableHook(addr);
-
-    QueryPerformanceCounter(&gStartReal);
-}
-
-void InitFPSLimiter(int fps) 
-{
-    QueryPerformanceFrequency(&gFrequency);
-    QueryPerformanceCounter(&gLastTime);
-
-    gTargetFrameTime = 1.0 / (double)fps;
-}
-
-void FrameLimiter() 
-{
-    LARGE_INTEGER currentTime;
-    QueryPerformanceCounter(&currentTime);
-
-    double elapsed = (double)(currentTime.QuadPart - gLastTime.QuadPart) / gFrequency.QuadPart;
-
-    double currentFPS = 1.0 / elapsed;
-
-    // динамический множитель
-    gSpeedMultiplier = currentFPS / (double)BaseFPS;
-
-    if (elapsed < gTargetFrameTime) {
-        double remaining = gTargetFrameTime - elapsed;
-
-        if (remaining > 0.002) {
-            DWORD sleepTime = (DWORD)((remaining - 0.001) * 1000);
-            Sleep(sleepTime);
-        }
-
-        do {
-            QueryPerformanceCounter(&currentTime);
-            elapsed = (double)(currentTime.QuadPart - gLastTime.QuadPart) / gFrequency.QuadPart;
-        } while (elapsed < gTargetFrameTime);
-    }
-
-    gLastTime = currentTime;
-}
-
-void WriteBytes(void* address, void* data, size_t size) 
-{
-    DWORD oldProtect;
-    VirtualProtect(address, size, PAGE_EXECUTE_READWRITE, &oldProtect);
-    memcpy(address, data, size);
-    VirtualProtect(address, size, oldProtect, &oldProtect);
-}
-
-void ApplyAspect() 
-{
-    // Адреса
-    void* addr1 = (void*)0x405D65;
-    void* addr2 = (void*)0x4DD915;
-    void* addr3 = (void*)0x4DD9B6;
-
-    // Значения
-    if (cfg.Aspect == 1) { // 16:9
-        uint8_t val = 0x10;
-        WriteBytes(addr1, &val, 1);
-        WriteBytes(addr2, &val, 1);
-        WriteBytes(addr3, &val, 1);
-    }
-    else if (cfg.Aspect == 2) { // 4:3
-        uint8_t val = 0x40;
-        WriteBytes(addr1, &val, 1);
-        WriteBytes(addr2, &val, 1);
-        WriteBytes(addr3, &val, 1);
-    }
-    else if (cfg.Aspect == 3) { // 32:9
-        uint8_t val[2] = { 0x90, 0x3E };
-        WriteBytes(addr1, val, 2);
-        WriteBytes(addr2, val, 2);
-        WriteBytes(addr3, val, 2);
-    }
-}
-
-void ApplyFOV()
-{
-    void* addr = (void*)0x405D6F;
-
-    int value = cfg.FOV;
-    WriteBytes(addr, &value, 1);
-}
-
-void ApplyResolution() 
-{
-    uint16_t width = (uint16_t)cfg.Width;
-    uint16_t height = (uint16_t)cfg.Height;
-
-    uint16_t* width1 = (uint16_t*)0x4A6A0D;
-    uint16_t* width2 = (uint16_t*)0x4A69D3;
-
-    uint16_t* height1 = (uint16_t*)0x4A6A08;
-    uint16_t* height2 = (uint16_t*)0x4A69CE;
-
-    DWORD oldProtect;
-
-    VirtualProtect(width1, sizeof(uint16_t), PAGE_EXECUTE_READWRITE, &oldProtect);
-    *width1 = width;
-    *width2 = width;
-
-    VirtualProtect(height1, sizeof(uint16_t), PAGE_EXECUTE_READWRITE, &oldProtect);
-    *height1 = height;
-    *height2 = height;
+    cfg.SpeedEnable = GetPrivateProfileIntA("SPEED", "Enable", 1, path);
+    cfg.BaseFPS = GetPrivateProfileIntA("SPEED", "BaseFPS", 60, path);
 }
 
 DWORD WINAPI InitThread(LPVOID) 
 {
-    //Sleep(500);
-
+    
     LoadConfig();
 
-    ApplyResolution();
-    ApplyAspect();
-    ApplyFOV();
+    ApplyFixes();
+    
+    //Sleep(1000);
+
+    InitFPS();
+
+    MH_Initialize();
+
+    HookTime();
+    
+
+    //if (GetModuleHandleA("d3d9.dll"))
+    HookD3D9();
+    //else
+        //HookD3D8();
 
     return 0;
 }
 
-BOOL APIENTRY DllMain(HMODULE hModule,
-    DWORD reason,
-    LPVOID) 
+BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID) 
 {
-    if (reason == DLL_PROCESS_ATTACH) {
-        DisableThreadLibraryCalls(hModule);
-        CreateThread(nullptr, 0, InitThread, nullptr, 0, nullptr);
+    if (r == DLL_PROCESS_ATTACH) {
+        DisableThreadLibraryCalls(h);
+        CreateThread(0, 0, InitThread, 0, 0, 0);
     }
     return TRUE;
 }
-
