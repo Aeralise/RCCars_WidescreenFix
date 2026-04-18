@@ -59,7 +59,8 @@ void ApplyAspect()
     void* addrH8 = (void*)0x56D78A;     //overtR    23
     void* addrH9 = (void*)0x56D782;     //overtW    F5
     void* addrH10 = (void*)0x56D3F2;    //enum      62
-    //void* addrH11 = = (void*)0x   //map
+    void* addrH11 = (void*)0x56ECA2;    //map 1     54
+    void* addrH12 = (void*)0x56ECB2;    //map 2     54
     void* addrHM1 = (void*)0x56D282;    //msgPause  A3
     void* addrHM2 = (void*)0x56D27A;    //msgLow    23
     void* addrHM3 = (void*)0x56D28A;    //msgWrong  23
@@ -70,6 +71,7 @@ void ApplyAspect()
     void* addrHM8 = (void*)0x56D2B2;    //1         BD
     void* addrHM9 = (void*)0x56D2BA;    //finish    C6
     void* addrHM10 = (void*)0x56D2C2;   //start     F5
+    void* addrH13 = (void*)0x56ECBA;   //mm logo    57
 
     // Значения
     if (cfg.Aspect == 1) { // 16:9
@@ -88,7 +90,7 @@ void ApplyAspect()
             WriteBytes(addrHM3, &val0, 1);
             WriteBytes(addrHM6, &val0, 1);
             WriteBytes(addrHM7, &val0, 1);
-            val0 = 0x69;
+            val0 = 0x70;
             WriteBytes(addrH4, &val0, 1);
             val0 = 0xBB;
             WriteBytes(addrH5, &val0, 1);
@@ -109,7 +111,11 @@ void ApplyAspect()
             WriteBytes(addrHM8, &val0, 1);
             val0 = 0x94;
             WriteBytes(addrHM9, &val0, 1);
-            
+            val0 = 0x20;
+            WriteBytes(addrH11, &val0, 1);
+            WriteBytes(addrH12, &val0, 1);
+            val0 = 0x61;
+            WriteBytes(addrH13, &val0, 1);
         }
     }
     else if (cfg.Aspect == 2) { // 4:3
