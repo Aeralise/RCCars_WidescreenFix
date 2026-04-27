@@ -9,6 +9,8 @@ struct Config
     int FOV = 100;
     int FixHUD = 1;
 
+    //int Patch_4GB = 1;
+
     int NoMinimize = 0;
 };
 
@@ -30,6 +32,7 @@ void LoadConfig()
     cfg.FOV = GetPrivateProfileIntA("MAIN", "FOV", 100, path);
     cfg.FixHUD = GetPrivateProfileIntA("MAIN", "FixHUD", 1, path);
 
+    //cfg.Patch_4GB = GetPrivateProfileIntA("MISC", "Patch_4GB", 1, path);
     cfg.NoMinimize = GetPrivateProfileIntA("DEBUG", "NoMinimize", 0, path);
 }
 
@@ -71,7 +74,10 @@ void ApplyAspect()
     void* addrHM8 = (void*)0x56D2B2;    //1         BD
     void* addrHM9 = (void*)0x56D2BA;    //finish    C6
     void* addrHM10 = (void*)0x56D2C2;   //start     F5
+    void* addrHM11 = (void*)0x56D2CA;   //bestLap   23
     void* addrH13 = (void*)0x56ECBA;   //mm logo    57
+    void* addrH14 = (void*)0x56B8EE;   //mm cr      4F
+    void* addrH15 = (void*)0x56B8DE;   //mm 1c      43
 
     // Значения
     if (cfg.Aspect == 1) { // 16:9
@@ -90,6 +96,7 @@ void ApplyAspect()
             WriteBytes(addrHM3, &val0, 1);
             WriteBytes(addrHM6, &val0, 1);
             WriteBytes(addrHM7, &val0, 1);
+            WriteBytes(addrHM11, &val0, 1);
             val0 = 0x70;
             WriteBytes(addrH4, &val0, 1);
             val0 = 0xBB;
@@ -116,6 +123,10 @@ void ApplyAspect()
             WriteBytes(addrH12, &val0, 1);
             val0 = 0x61;
             WriteBytes(addrH13, &val0, 1);
+            val0 = 0x5A;
+            WriteBytes(addrH14, &val0, 1);
+            val0 = 0x32;
+            WriteBytes(addrH15, &val0, 1);
         }
     }
     else if (cfg.Aspect == 2) { // 4:3
@@ -169,6 +180,18 @@ void ApplyDebug() {
     }
 }
 
+//void ApplyMisc() {
+//    if (cfg.Patch_4GB == 1)
+//    {
+//        uint8_t val = 0x2F;
+//        void* addr = (void*)0x40012E;
+//        WriteBytes(addr, &val, 1);
+//        uint8_t val2[2] = { 0x58,  0x60};
+//        void* addr2 = (void*)0x400170;
+//        WriteBytes(addr2, val2, 2);
+//    }
+//}
+
 DWORD WINAPI InitThread(LPVOID) {
     //Sleep(500);
 
@@ -179,6 +202,8 @@ DWORD WINAPI InitThread(LPVOID) {
     ApplyFOV();
 
     ApplyDebug();
+    //ApplyMisc();
+
 
     return 0;
 }
