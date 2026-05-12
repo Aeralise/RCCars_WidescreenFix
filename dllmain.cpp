@@ -34,8 +34,8 @@ int g_MaxDelta = 100;
 // =====================================================
 
 // DAT_0148F914
-volatile int* g_GameElapsed =
-(int*)0x0148F914;
+volatile int* g_GameElapsed = (int*)0x0148F914;
+volatile int* g_TargetFPS = (int*)0x0148FAD0;
 
 // =====================================================
 // TIMER
@@ -58,19 +58,16 @@ LARGE_INTEGER g_LastFrame;
 
 void LimitFPS()
 {
-    if (g_FPSLimit <= 0)
-        return;
+    if (g_FPSLimit <= 0 || g_FPSLimit > 240)
+        g_FPSLimit = 240;
 
     LARGE_INTEGER now;
 
     QueryPerformanceCounter(&now);
 
-    double elapsed =
-        (double)(now.QuadPart - g_LastFrame.QuadPart) /
-        (double)g_Freq.QuadPart;
+    double elapsed = (double)(now.QuadPart - g_LastFrame.QuadPart) / (double)g_Freq.QuadPart;
 
-    double target =
-        1.0 / (double)g_FPSLimit;
+    double target = 1.0 / (double)g_FPSLimit;
 
     if (elapsed < target)
     {
@@ -80,6 +77,8 @@ void LimitFPS()
         if (sleepMs > 0)
             Sleep(sleepMs);
     }
+
+    *g_TargetFPS = g_FPSLimit;
 
     QueryPerformanceCounter(&g_LastFrame);
 }
