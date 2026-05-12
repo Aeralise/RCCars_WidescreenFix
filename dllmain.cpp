@@ -1,5 +1,10 @@
 ﻿#include <Windows.h>
 #include <cstdint>
+#include <mmsystem.h>
+#include <chrono>
+#include <cmath>
+
+#pragma comment(lib, "winmm.lib")
 
 struct Config 
 {
@@ -15,6 +20,110 @@ struct Config
 };
 
 Config cfg;
+
+// =====================================================
+// CONFIG
+// =====================================================
+
+int g_FPSLimit = 60;
+bool g_EnableFix = true;
+int g_MaxDelta = 100;
+
+// =====================================================
+// GAME MEMORY
+// =====================================================
+
+// DAT_0148F914
+volatile int* g_GameElapsed =
+(int*)0x0148F914;
+
+// =====================================================
+// TIMER
+// =====================================================
+
+LARGE_INTEGER g_Freq;
+LARGE_INTEGER g_LastCounter;
+
+double g_Accumulator = 0.0;
+
+// =====================================================
+// FPS LIMITER
+// =====================================================
+
+LARGE_INTEGER g_LastFrame;
+
+// =====================================================
+// LIMIT FPS
+// =====================================================
+
+void LimitFPS()
+{
+    if (g_FPSLimit <= 0)
+        return;
+
+    LARGE_INTEGER now;
+
+    QueryPerformanceCounter(&now);
+
+    double elapsed =
+        (double)(now.QuadPart - g_LastFrame.QuadPart) /
+        (double)g_Freq.QuadPart;
+
+    double target =
+        1.0 / (double)g_FPSLimit;
+
+    if (elapsed < target)
+    {
+        DWORD sleepMs =
+            (DWORD)((target - elapsed) * 1000.0);
+
+        if (sleepMs > 0)
+            Sleep(sleepMs);
+    }
+
+    QueryPerformanceCounter(&g_LastFrame);
+}
+
+// =====================================================
+// UPDATE GAME TIMER
+// =====================================================
+
+void UpdateGameDelta()
+{
+    LARGE_INTEGER now;
+
+    QueryPerformanceCounter(&now);
+
+    double deltaSeconds =
+        (double)(now.QuadPart - g_LastCounter.QuadPart) /
+        (double)g_Freq.QuadPart;
+
+    g_LastCounter = now;
+
+    double deltaMS =
+        deltaSeconds * 1000.0;
+
+    g_Accumulator += deltaMS;
+
+    int finalMS =
+        (int)g_Accumulator;
+
+    g_Accumulator -= finalMS;
+
+    if (finalMS < 1)
+        finalMS = 1;
+
+    if (finalMS > g_MaxDelta)
+        finalMS = g_MaxDelta;
+
+    // Write directly into game timer
+    *g_GameElapsed = finalMS;
+}
+
+
+// =====================================================
+// LOAD CONFIG
+// =====================================================
 
 void LoadConfig() 
 {
@@ -34,6 +143,12 @@ void LoadConfig()
 
     //cfg.Patch_4GB = GetPrivateProfileIntA("MISC", "Patch_4GB", 1, path);
     cfg.NoMinimize = GetPrivateProfileIntA("DEBUG", "NoMinimize", 0, path);
+
+    g_FPSLimit = GetPrivateProfileIntA("FPS", "Limit", 60, path);
+
+    g_EnableFix = GetPrivateProfileIntA("Fix", "Enabled", 1, path);
+
+    g_MaxDelta = GetPrivateProfileIntA("Fix", "ClampMaxDelta", 100, path);
 }
 
 void WriteBytes(void* address, void* data, size_t size) 
@@ -202,6 +317,28 @@ DWORD WINAPI InitThread(LPVOID) {
     ApplyFOV();
 
     ApplyDebug();
+
+    QueryPerformanceFrequency(&g_Freq);
+
+    QueryPerformanceCounter(&g_LastCounter);
+
+    QueryPerformanceCounter(&g_LastFrame);
+
+    timeBeginPeriod(1);
+
+    while (true)
+    {
+        if (g_EnableFix)
+        {
+            UpdateGameDelta();
+        }
+
+        LimitFPS();
+
+        Sleep(1);
+    }
+
+    
     //ApplyMisc();
 
 
