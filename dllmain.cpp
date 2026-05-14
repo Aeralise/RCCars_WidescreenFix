@@ -35,7 +35,10 @@ int g_MaxDelta = 100;
 
 // DAT_0148F914
 volatile int* g_GameElapsed = (int*)0x0148F914;
-volatile int* g_TargetFPS = (int*)0x0148FAD0;
+volatile uint16_t* g_TargetFPS = (uint16_t*)0x0148FAD0;
+
+volatile uint16_t* XResolution = (uint16_t*)0x00E2F9C0;
+volatile uint16_t* YResolution = (uint16_t*)0x00E2F9C4;
 
 // =====================================================
 // TIMER
@@ -58,8 +61,8 @@ LARGE_INTEGER g_LastFrame;
 
 void LimitFPS()
 {
-    if (g_FPSLimit <= 0 || g_FPSLimit > 240)
-        g_FPSLimit = 240;
+    if (g_FPSLimit <= 0 || g_FPSLimit > 360)
+        g_FPSLimit = 360;
 
     LARGE_INTEGER now;
 
@@ -71,13 +74,12 @@ void LimitFPS()
 
     if (elapsed < target)
     {
-        DWORD sleepMs =
-            (DWORD)((target - elapsed) * 1000.0);
+        DWORD sleepMs = (DWORD)((target - elapsed) * 1000.0);
 
         if (sleepMs > 0)
             Sleep(sleepMs);
     }
-
+    
     *g_TargetFPS = g_FPSLimit;
 
     QueryPerformanceCounter(&g_LastFrame);
@@ -93,19 +95,15 @@ void UpdateGameDelta()
 
     QueryPerformanceCounter(&now);
 
-    double deltaSeconds =
-        (double)(now.QuadPart - g_LastCounter.QuadPart) /
-        (double)g_Freq.QuadPart;
+    double deltaSeconds = (double)(now.QuadPart - g_LastCounter.QuadPart) / (double)g_Freq.QuadPart;
 
     g_LastCounter = now;
 
-    double deltaMS =
-        deltaSeconds * 1000.0;
+    double deltaMS = deltaSeconds * 1000.0;
 
     g_Accumulator += deltaMS;
 
-    int finalMS =
-        (int)g_Accumulator;
+    int finalMS = (int)g_Accumulator;
 
     g_Accumulator -= finalMS;
 
@@ -332,9 +330,11 @@ DWORD WINAPI InitThread(LPVOID) {
             UpdateGameDelta();
         }
 
-        LimitFPS();
+        //*XResolution = cfg.Width;
+        //*YResolution = cfg.Height;
 
-        Sleep(1);
+        LimitFPS();
+        Sleep(0.5f);
     }
 
     
