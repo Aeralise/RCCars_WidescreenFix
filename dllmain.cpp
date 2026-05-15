@@ -1,329 +1,497 @@
 ﻿#include <Windows.h>
-//#include <d3d8.h>
-#include <d3d9.h>
 #include <cstdint>
+#include <mmsystem.h>
 #include <chrono>
-#include "MinHook.h"
-#pragma comment (lib, "winmm.lib")
+#include <cmath>
 
+#pragma comment(lib, "winmm.lib")
 
-// ================= CONFIG =================
-
-struct Config {
+struct Config 
+{
     int Width = 1920;
     int Height = 1080;
     int Aspect = 1;
     int FOV = 100;
+    int FixHUD = 1;
 
-    int FPSLimit = 60;
+    //int Patch_4GB = 1;
 
-    int SpeedEnable = 1;
-    int BaseFPS = 60;
+    int NoMinimize = 0;
 };
 
 Config cfg;
 
-// ================= FPS LIMITER =================
+// =====================================================
+// CONFIG
+// =====================================================
 
-LARGE_INTEGER gFreq, gLast;
-double gTargetFrameTime = 0.0;
+int g_FPSLimit = 60;
+//bool g_EnableFix = true;
+int g_MaxDelta = 100;
 
-void InitFPS() 
+bool g_Enabled = true;
+double g_TargetFPS = 144.0;
+
+// EMA smoothing factor
+double g_SmoothingFactor = 0.10;
+
+// =====================================================
+// ORIGINAL FUNCTION
+// =====================================================
+
+typedef void(__cdecl* t_gmpSetElapsedTime)(
+    int,
+    float,
+    float);
+
+t_gmpSetElapsedTime Real_gmpSetElapsedTime = (t_gmpSetElapsedTime)0x004407A0;
+
+// =====================================================
+// PATCH LOCATION
+// =====================================================
+
+// CALL _gmpSetElapsedTime
+static uintptr_t g_CallPatch = 0x0048BD41;
+
+// =====================================================
+// TIMING
+// =====================================================
+
+LARGE_INTEGER g_QPCFreq;
+
+LARGE_INTEGER g_LastFrameCounter;
+
+bool g_TimerInitialized = false;
+
+// smoothed frametime
+double g_SmoothedMS = 0.0;
+
+// fractional integer cadence accumulator
+double g_FractionalAccumulator = 0.0;
+
+// =====================================================
+// FPS LIMITER + FRAME TIMER
+// =====================================================
+
+double WaitAndMeasureFrame()
 {
-    QueryPerformanceFrequency(&gFreq);
-    QueryPerformanceCounter(&gLast);
-    gTargetFrameTime = 1.0 / cfg.FPSLimit;
-}
-
-//double FrameLimiter() 
-//{
-//    LARGE_INTEGER now;
-//    QueryPerformanceCounter(&now);
-//
-//    double elapsed = (double)(now.QuadPart - gLast.QuadPart) / gFreq.QuadPart;
-//
-//    if (elapsed < gTargetFrameTime) {
-//        double remain = gTargetFrameTime - elapsed;
-//
-//        if (remain > 0.002)
-//            Sleep((DWORD)((remain - 0.001) * 1000));
-//
-//        do {
-//            QueryPerformanceCounter(&now);
-//            elapsed = (double)(now.QuadPart - gLast.QuadPart) / gFreq.QuadPart;
-//        } while (elapsed < gTargetFrameTime);
-//    }
-//
-//    gLast = now;
-//    return elapsed;
-//}
-
-// ================= SPEEDHACK =================
-
-typedef BOOL(WINAPI* QPC_t)(LARGE_INTEGER*);
-QPC_t oQPC = nullptr;
-
-double gSpeedMultiplier = 1.0;
-LARGE_INTEGER gStartReal;
-
-BOOL WINAPI hkQPC(LARGE_INTEGER* lp) 
-{
-    BOOL ret = oQPC(lp);
-
-    if (!cfg.SpeedEnable)
-        return ret;
-
-    LARGE_INTEGER now = *lp;
-
-    double delta = (double)(now.QuadPart - gStartReal.QuadPart);
-    delta *= gSpeedMultiplier;
-
-    lp->QuadPart = gStartReal.QuadPart + (LONGLONG)delta;
-
-    return ret;
-}
-
-void HookTime() 
-{
-    MH_CreateHook(GetProcAddress(GetModuleHandleA("kernel32.dll"),
-        "QueryPerformanceCounter"),
-        &hkQPC, (void**)&oQPC);
-
-    MH_EnableHook(MH_ALL_HOOKS);
-
-    QueryPerformanceCounter(&gStartReal);
-}
-
-// ================= D3D HOOKS =================
-
-//typedef IDirect3D9* (WINAPI* Direct3DCreate9_t)(UINT);
-//Direct3DCreate9_t oDirect3DCreate9 = nullptr;
-//
-//typedef HRESULT(__stdcall* Present9_t)(IDirect3DDevice9*, const RECT*, const RECT*, HWND, const RGNDATA*);
-//Present9_t oPresent9 = nullptr;
-//
-//// ---- DX9
-//HRESULT __stdcall hkPresent9(IDirect3DDevice9* dev, const RECT* a, const RECT* b, HWND c, const RGNDATA* d) {
-//    double dt = FrameLimiter();
-//
-//    if (cfg.SpeedEnable) {
-//        double fps = 1.0 / dt;
-//        gSpeedMultiplier = fps / (double)cfg.BaseFPS;
-//    }
-//
-//    return oPresent9(dev, a, b, c, d);
-//}
-//
-//
-//typedef HRESULT(__stdcall* CreateDevice_t)(
-//    IDirect3D9*,
-//    UINT,
-//    D3DDEVTYPE,
-//    HWND,
-//    DWORD,
-//    D3DPRESENT_PARAMETERS*,
-//    IDirect3DDevice9**
-//    );
-//
-//CreateDevice_t oCreateDevice9 = nullptr;
-//
-//HRESULT __stdcall hkCreateDevice9(
-//    IDirect3D9* self,
-//    UINT Adapter,
-//    D3DDEVTYPE Type,
-//    HWND hFocusWindow,
-//    DWORD BehaviorFlags,
-//    D3DPRESENT_PARAMETERS* pPresentationParameters,
-//    IDirect3DDevice9** ppReturnedDeviceInterface)
-//{
-//    HRESULT hr = oCreateDevice9(
-//        self, Adapter, Type, hFocusWindow,
-//        BehaviorFlags, pPresentationParameters,
-//        ppReturnedDeviceInterface
-//    );
-//
-//    if (SUCCEEDED(hr) && ppReturnedDeviceInterface && *ppReturnedDeviceInterface) {
-//        void** vtable = *reinterpret_cast<void***>(*ppReturnedDeviceInterface);
-//
-//        MH_CreateHook(vtable[17], &hkPresent9, (void**)&oPresent9);
-//        MH_EnableHook(vtable[17]);
-//    }
-//
-//    return hr;
-//}
-//
-//IDirect3D9* WINAPI hkDirect3DCreate9(UINT SDKVersion) {
-//    IDirect3D9* d3d = oDirect3DCreate9(SDKVersion);
-//
-//    if (d3d) {
-//        void** vtable = *reinterpret_cast<void***>(d3d);
-//
-//        MH_CreateHook(vtable[16], &hkCreateDevice9, (void**)&oCreateDevice9);
-//        MH_EnableHook(vtable[16]);
-//    }
-//
-//    return d3d;
-//}
-
-//void HookD3D9Real() {
-//    HMODULE hD3D9 = GetModuleHandleA("d3d9.dll");
-//    if (!hD3D9) return;
-//
-//    void* addr = GetProcAddress(hD3D9, "Direct3DCreate9");
-//
-//    MH_CreateHook(addr, &hkDirect3DCreate9, (void**)&oDirect3DCreate9);
-//    MH_EnableHook(addr);
-//}
-//
-//void HookD3D9Present() {
-//    IDirect3D9* d3d = Direct3DCreate9(D3D_SDK_VERSION);
-//    if (!d3d) return;
-//
-//    D3DPRESENT_PARAMETERS pp = {};
-//    pp.Windowed = TRUE;
-//    pp.SwapEffect = D3DSWAPEFFECT_DISCARD;
-//    pp.hDeviceWindow = GetForegroundWindow();
-//
-//    IDirect3DDevice9* dev = nullptr;
-//
-//    if (FAILED(d3d->CreateDevice(
-//        D3DADAPTER_DEFAULT,
-//        D3DDEVTYPE_HAL,
-//        pp.hDeviceWindow,
-//        D3DCREATE_SOFTWARE_VERTEXPROCESSING,
-//        &pp,
-//        &dev)))
-//    {
-//        d3d->Release();
-//        return;
-//    }
-//
-//    void** vtable = *reinterpret_cast<void***>(dev);
-//
-//    void* presentAddr = vtable[17];
-//
-//    // 🔥 ВАЖНО: глобальный хук
-//    MH_CreateHook(presentAddr, &hkPresent9, (void**)&oPresent9);
-//    MH_EnableHook(presentAddr);
-//
-//    dev->Release();
-//    d3d->Release();
-//}
-
-void GlobalLimiter() {
     LARGE_INTEGER now;
+
     QueryPerformanceCounter(&now);
 
-    double elapsed = (double)(now.QuadPart - gLast.QuadPart) / gFreq.QuadPart;
+    if (!g_TimerInitialized)
+    {
+        g_LastFrameCounter = now;
 
-    if (elapsed < gTargetFrameTime) {
-        double remain = gTargetFrameTime - elapsed;
+        g_TimerInitialized = true;
 
-        if (remain > 0.002)
-            Sleep((DWORD)((remain - 0.001) * 1000));
-
-        do {
-            QueryPerformanceCounter(&now);
-            elapsed = (double)(now.QuadPart - gLast.QuadPart) / gFreq.QuadPart;
-        } while (elapsed < gTargetFrameTime);
+        return 1000.0 / g_TargetFPS;
     }
 
-    gLast = now;
+    double targetMS =
+        1000.0 / g_TargetFPS;
 
-    // Speedhack
-    if (cfg.SpeedEnable) {
-        double fps = 1.0 / elapsed;
-        gSpeedMultiplier = fps / (double)cfg.BaseFPS;
+    double elapsedMS;
+
+    while (true)
+    {
+        QueryPerformanceCounter(&now);
+
+        elapsedMS =
+            ((double)(
+                now.QuadPart -
+                g_LastFrameCounter.QuadPart)
+                / (double)g_QPCFreq.QuadPart)
+            * 1000.0;
+
+        if (elapsedMS >= targetMS)
+            break;
+
+        // better than Sleep(1)
+        Sleep(0);
     }
+
+    g_LastFrameCounter = now;
+
+    // clamp broken spikes
+    if (elapsedMS > 250.0)
+        elapsedMS = targetMS;
+
+    return elapsedMS;
 }
 
-DWORD WINAPI LimiterThread(LPVOID) {
-    while (true) {
-        GlobalLimiter();
-    }
-}
+// =====================================================
+// SMOOTH FRAME TIME
+// =====================================================
 
-
-// ================= MEMORY PATCH =================
-
-void Write(void* addr, void* data, size_t size) 
+double SmoothFrameTime(
+    double realDeltaMS)
 {
-    DWORD old;
-    VirtualProtect(addr, size, PAGE_EXECUTE_READWRITE, &old);
-    memcpy(addr, data, size);
-    VirtualProtect(addr, size, old, &old);
+    if (g_SmoothedMS <= 0.0)
+    {
+        g_SmoothedMS =
+            realDeltaMS;
+    }
+    else
+    {
+        // EMA smoothing
+        g_SmoothedMS =
+            g_SmoothedMS *
+            (1.0 - g_SmoothingFactor)
+            +
+            realDeltaMS *
+            g_SmoothingFactor;
+    }
+
+    return g_SmoothedMS;
 }
 
-void ApplyFixes() 
+// =====================================================
+// HOOK
+// =====================================================
+
+BYTE g_OriginalBytes[5];
+
+uintptr_t g_HookAddress = 0x004407A0;
+
+
+// =====================================================
+// STABLE INTEGER CADENCE
+// =====================================================
+
+int GenerateNormalizedMS(
+    double smoothMS)
 {
-    // Resolution
-    uint16_t w = (uint16_t)cfg.Width;
-    uint16_t h = (uint16_t)cfg.Height;
+    int baseMS =
+        (int)floor(smoothMS);
 
-    Write((void*)0x4A6A0D, &w, 2);
-    Write((void*)0x4A69D3, &w, 2);
-    Write((void*)0x4A6A08, &h, 2);
-    Write((void*)0x4A69CE, &h, 2);
+    double frac =
+        smoothMS -
+        (double)baseMS;
 
-    // Aspect
-    uint8_t val = (cfg.Aspect == 1) ? 0x10 : (cfg.Aspect == 2) ? 0x40 : 0x10;
+    g_FractionalAccumulator +=
+        frac;
 
-    Write((void*)0x405D65, &val, 1);
-    Write((void*)0x4DD915, &val, 1);
-    Write((void*)0x4DD9B6, &val, 1);
+    if (g_FractionalAccumulator >= 1.0)
+    {
+        baseMS++;
 
-    // FOV
-    Write((void*)0x405D6F, &cfg.FOV, 1);
+        g_FractionalAccumulator -= 1.0;
+    }
+
+    if (baseMS < 1)
+        baseMS = 1;
+
+    return baseMS;
 }
 
-// ================= INIT =================
+// =====================================================
+// REPLACEMENT CALL TARGET
+// =====================================================
+
+void __cdecl My_gmpSetElapsedTime(
+    int elapsedMS,
+    float minStep,
+    float maxStep)
+{
+    if (!g_Enabled)
+    {
+        Real_gmpSetElapsedTime(
+            elapsedMS,
+            minStep,
+            maxStep);
+
+        return;
+    }
+
+    // -------------------------------------------------
+    // FPS limiter + real frame timing
+    // -------------------------------------------------
+
+    double realFrameMS =
+        WaitAndMeasureFrame();
+
+    // -------------------------------------------------
+    // Smooth unstable frametimes
+    // -------------------------------------------------
+
+    double smoothMS =
+        SmoothFrameTime(
+            realFrameMS);
+
+    // -------------------------------------------------
+    // Convert to stable integer cadence
+    // -------------------------------------------------
+
+    int normalizedMS =
+        GenerateNormalizedMS(
+            smoothMS);
+
+    // -------------------------------------------------
+    // Feed normalized timestep into GMP
+    // -------------------------------------------------
+
+    Real_gmpSetElapsedTime(
+        normalizedMS,
+        minStep,
+        maxStep);
+}
+
+// =====================================================
+// INSTALL CALL PATCH
+// =====================================================
+
+void InstallPatch()
+{
+    BYTE* call =
+        (BYTE*)g_CallPatch;
+
+    DWORD oldProtect;
+
+    VirtualProtect(
+        call,
+        5,
+        PAGE_EXECUTE_READWRITE,
+        &oldProtect);
+
+    // CALL My_gmpSetElapsedTime
+    call[0] = 0xE8;
+
+    uintptr_t relative =
+        (uintptr_t)My_gmpSetElapsedTime -
+        (g_CallPatch + 5);
+
+    *(uintptr_t*)(call + 1) =
+        relative;
+
+    VirtualProtect(
+        call,
+        5,
+        oldProtect,
+        &oldProtect);
+
+    FlushInstructionCache(
+        GetCurrentProcess(),
+        call,
+        5);
+}
+
+// =====================================================
+// LOAD CONFIG
+// =====================================================
 
 void LoadConfig() 
 {
     char path[MAX_PATH];
     GetModuleFileNameA(NULL, path, MAX_PATH);
+
     char* slash = strrchr(path, '\\');
     if (slash) *(slash + 1) = '\0';
+
     strcat_s(path, "RCCars_WidescreenFix.ini");
 
     cfg.Width = GetPrivateProfileIntA("MAIN", "Width", 1920, path);
     cfg.Height = GetPrivateProfileIntA("MAIN", "Height", 1080, path);
     cfg.Aspect = GetPrivateProfileIntA("MAIN", "Aspect", 1, path);
     cfg.FOV = GetPrivateProfileIntA("MAIN", "FOV", 100, path);
+    cfg.FixHUD = GetPrivateProfileIntA("MAIN", "FixHUD", 1, path);
 
-    cfg.FPSLimit = GetPrivateProfileIntA("FPS", "Limit", 60, path);
+    //cfg.Patch_4GB = GetPrivateProfileIntA("MISC", "Patch_4GB", 1, path);
+    cfg.NoMinimize = GetPrivateProfileIntA("DEBUG", "NoMinimize", 0, path);
 
-    cfg.SpeedEnable = GetPrivateProfileIntA("SPEED", "Enable", 1, path);
-    cfg.BaseFPS = GetPrivateProfileIntA("SPEED", "BaseFPS", 60, path);
+    //g_Enabled = GetPrivateProfileIntA("Fix","Enabled",1, path) != 0;
+
+    g_TargetFPS =(double)GetPrivateProfileIntA("FPS","Limit",60,path);
+
+    if (g_TargetFPS < 1.0)
+        g_TargetFPS = 60.0;
+
+    //g_TargetMS = 1000.0 / g_TargetFPS;
+
 }
 
-DWORD WINAPI InitThread(LPVOID) 
+
+void WriteBytes(void* address, void* data, size_t size) 
 {
-    timeBeginPeriod(1);
-    
+    DWORD oldProtect;
+    VirtualProtect(address, size, PAGE_EXECUTE_READWRITE, &oldProtect);
+    memcpy(address, data, size);
+    VirtualProtect(address, size, oldProtect, &oldProtect);
+}
+
+void ApplyAspect() 
+{
+    // Адреса
+    // Camera & cars in menu
+    void* addr1 = (void*)0x405D65;
+    void* addr2 = (void*)0x4DD915;
+    void* addr3 = (void*)0x4DD9B6;
+    // HUD
+    void* addrH1 = (void*)0x56D0C2;     //racePos   23
+    void* addrH2 = (void*)0x56D0DA;     //lapLabel  23
+    void* addrH3 = (void*)0x56D04A;     //splUzel   83
+    void* addrH4 = (void*)0x56D6E2;     //cockL1    97
+    void* addrH5 = (void*)0x56D6DB;     //cockL2    BC
+    void* addrH6 = (void*)0x56D6EA;     //cockR1    34
+    void* addrH7 = (void*)0x56D6F2;     //cockR2    83
+    void* addrH8 = (void*)0x56D78A;     //overtR    23
+    void* addrH9 = (void*)0x56D782;     //overtW    F5
+    void* addrH10 = (void*)0x56D3F2;    //enum      62
+    void* addrH11 = (void*)0x56ECA2;    //map 1     54
+    void* addrH12 = (void*)0x56ECB2;    //map 2     54
+    void* addrHM1 = (void*)0x56D282;    //msgPause  A3
+    void* addrHM2 = (void*)0x56D27A;    //msgLow    23
+    void* addrHM3 = (void*)0x56D28A;    //msgWrong  23
+    void* addrHM4 = (void*)0x56D292;    //msgHit    A3
+    void* addrHM5 = (void*)0x56D29A;    //msgSmHit  A3
+    void* addrHM6 = (void*)0x56D2A2;    //3         23
+    void* addrHM7 = (void*)0x56D2AA;    //2         23
+    void* addrHM8 = (void*)0x56D2B2;    //1         BD
+    void* addrHM9 = (void*)0x56D2BA;    //finish    C6
+    void* addrHM10 = (void*)0x56D2C2;   //start     F5
+    void* addrHM11 = (void*)0x56D2CA;   //bestLap   23
+    void* addrH13 = (void*)0x56ECBA;   //mm logo    57
+    void* addrH14 = (void*)0x56B8EE;   //mm cr      4F
+    void* addrH15 = (void*)0x56B8DE;   //mm 1c      43
+
+    // Значения
+    if (cfg.Aspect == 1) { // 16:9
+        uint8_t val = 0x10;
+        WriteBytes(addr1, &val, 1);
+        WriteBytes(addr2, &val, 1);
+        WriteBytes(addr3, &val, 1);
+
+        if (cfg.FixHUD == 1) {
+            uint8_t val0 = 0x00;
+            WriteBytes(addrH1, &val0, 1);
+            WriteBytes(addrH2, &val0, 1);
+            WriteBytes(addrH3, &val0, 1);
+            WriteBytes(addrH8, &val0, 1);
+            WriteBytes(addrHM2, &val0, 1);
+            WriteBytes(addrHM3, &val0, 1);
+            WriteBytes(addrHM6, &val0, 1);
+            WriteBytes(addrHM7, &val0, 1);
+            WriteBytes(addrHM11, &val0, 1);
+            val0 = 0x70;
+            WriteBytes(addrH4, &val0, 1);
+            val0 = 0xBB;
+            WriteBytes(addrH5, &val0, 1);
+            val0 = 0x45;
+            WriteBytes(addrH6, &val0, 1);
+            val0 = 0x81;
+            WriteBytes(addrH7, &val0, 1);
+            val0 = 0xB8;
+            WriteBytes(addrH9, &val0, 1);
+            WriteBytes(addrHM10, &val0, 1);
+            val0 = 0x31;
+            WriteBytes(addrH10, &val0, 1);
+            val0 = 0x80;
+            WriteBytes(addrHM1, &val0, 1);
+            WriteBytes(addrHM4, &val0, 1);
+            WriteBytes(addrHM5, &val0, 1);
+            val0 = 0x8E;
+            WriteBytes(addrHM8, &val0, 1);
+            val0 = 0x94;
+            WriteBytes(addrHM9, &val0, 1);
+            val0 = 0x20;
+            WriteBytes(addrH11, &val0, 1);
+            WriteBytes(addrH12, &val0, 1);
+            val0 = 0x61;
+            WriteBytes(addrH13, &val0, 1);
+            val0 = 0x5A;
+            WriteBytes(addrH14, &val0, 1);
+            val0 = 0x32;
+            WriteBytes(addrH15, &val0, 1);
+        }
+    }
+    else if (cfg.Aspect == 2) { // 4:3
+        uint8_t val = 0x40;
+        WriteBytes(addr1, &val, 1);
+        WriteBytes(addr2, &val, 1);
+        WriteBytes(addr3, &val, 1);
+    }
+    else if (cfg.Aspect == 3) { // 32:9
+        uint8_t val[2] = { 0x90, 0x3E };
+        WriteBytes(addr1, val, 2);
+        WriteBytes(addr2, val, 2);
+        WriteBytes(addr3, val, 2);
+    }
+}
+
+void ApplyFOV() {
+    void* addr = (void*)0x405D6F;
+
+    int value = cfg.FOV;
+    WriteBytes(addr, &value, 1);
+}
+
+void ApplyResolution() {
+    uint16_t width = (uint16_t)cfg.Width;
+    uint16_t height = (uint16_t)cfg.Height;
+
+    uint16_t* width1 = (uint16_t*)0x4A6A0D;
+    uint16_t* width2 = (uint16_t*)0x4A69D3;
+
+    uint16_t* height1 = (uint16_t*)0x4A6A08;
+    uint16_t* height2 = (uint16_t*)0x4A69CE;
+
+    DWORD oldProtect;
+
+    VirtualProtect(width1, sizeof(uint16_t), PAGE_EXECUTE_READWRITE, &oldProtect);
+    *width1 = width;
+    *width2 = width;
+
+    VirtualProtect(height1, sizeof(uint16_t), PAGE_EXECUTE_READWRITE, &oldProtect);
+    *height1 = height;
+    *height2 = height;
+}
+
+void ApplyDebug() {
+    if (cfg.NoMinimize == 1)
+    {
+        uint8_t val = 0x75;
+        void* addr = (void*)0x441177;
+        WriteBytes(addr, &val, 1);
+    }
+}
+
+//void ApplyMisc() {
+//    if (cfg.Patch_4GB == 1)
+//    {
+//        uint8_t val = 0x2F;
+//        void* addr = (void*)0x40012E;
+//        WriteBytes(addr, &val, 1);
+//        uint8_t val2[2] = { 0x58,  0x60};
+//        void* addr2 = (void*)0x400170;
+//        WriteBytes(addr2, val2, 2);
+//    }
+//}
+
+DWORD WINAPI InitThread(LPVOID) {
+
 
     LoadConfig();
 
-    ApplyFixes();
+    ApplyResolution();
+    ApplyAspect();
+    ApplyFOV();
+
+    ApplyDebug();
     
-    //Sleep(100);
+    QueryPerformanceFrequency(&g_QPCFreq);
 
-    InitFPS();
-
-    MH_Initialize();
-
-    HookTime();
-    
-    CreateThread(0, 0, LimiterThread, 0, 0, 0);
+    timeBeginPeriod(1);
+    InstallPatch();   
 
     return 0;
 }
 
-BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID) 
-{
-    if (r == DLL_PROCESS_ATTACH) {
-        DisableThreadLibraryCalls(h);
-        CreateThread(0, 0, InitThread, 0, 0, 0);
+BOOL APIENTRY DllMain(HMODULE hModule,
+    DWORD reason,
+    LPVOID) {
+    if (reason == DLL_PROCESS_ATTACH) {
+        DisableThreadLibraryCalls(hModule);
+        CreateThread(nullptr, 0, InitThread, nullptr, 0, nullptr);
     }
     return TRUE;
 }
