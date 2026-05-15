@@ -26,34 +26,137 @@ Config cfg;
 // =====================================================
 
 int g_FPSLimit = 60;
-bool g_EnableFix = true;
+//bool g_EnableFix = true;
 int g_MaxDelta = 100;
 
-// =====================================================
-// GAME MEMORY
-// =====================================================
-
-// DAT_0148F914
-volatile int* g_GameElapsed = (int*)0x0148F914;
-volatile uint16_t* g_TargetFPS = (uint16_t*)0x0148FAD0;
-
-volatile uint16_t* XResolution = (uint16_t*)0x00E2F9C0;
-volatile uint16_t* YResolution = (uint16_t*)0x00E2F9C4;
+bool g_Enabled = true;
+double g_TargetFPS = 144.0;
 
 // =====================================================
-// TIMER
+// ORIGINAL FUNCTION
+// =====================================================
+
+typedef void(__cdecl* t_gmpSetElapsedTime)(
+    int,
+    float,
+    float);
+
+t_gmpSetElapsedTime Real_gmpSetElapsedTime = (t_gmpSetElapsedTime)0x004407A0;
+
+// =====================================================
+// PATCH LOCATION
+// =====================================================
+
+// CALL _gmpSetElapsedTime
+static uintptr_t g_CallPatch = 0x0048BD41;
+
+// =====================================================
+// TIMING
 // =====================================================
 
 LARGE_INTEGER g_Freq;
-LARGE_INTEGER g_LastCounter;
-
-double g_Accumulator = 0.0;
-
-// =====================================================
-// FPS LIMITER
-// =====================================================
-
 LARGE_INTEGER g_LastFrame;
+
+double g_TargetMS = 6.944444;
+
+double g_FractionalAccumulator = 0.0;
+
+// =====================================================
+// HOOK
+// =====================================================
+
+BYTE g_OriginalBytes[5];
+
+uintptr_t g_HookAddress = 0x004407A0;
+
+
+// =====================================================
+// GENERATE STABLE TIMESTEP
+// =====================================================
+
+int GenerateNormalizedMS()
+{
+    int ms = (int)floor(g_TargetMS);
+
+    double frac = g_TargetMS - (double)ms;
+
+    g_FractionalAccumulator += frac;
+
+    if (g_FractionalAccumulator >= 1.0)
+    {
+        ms++;
+
+        g_FractionalAccumulator -= 1.0;
+    }
+
+    if (ms < 1)
+        ms = 1;
+
+    return ms;
+}
+
+// =====================================================
+// REPLACEMENT CALL TARGET
+// =====================================================
+
+void __cdecl My_gmpSetElapsedTime(
+    int elapsedMS,
+    float minStep,
+    float maxStep)
+{
+    if (!g_Enabled)
+    {
+        Real_gmpSetElapsedTime(
+            elapsedMS,
+            minStep,
+            maxStep);
+
+        return;
+    }
+
+    // replace unstable timer values
+    int normalizedMS = GenerateNormalizedMS();
+
+    Real_gmpSetElapsedTime(
+        normalizedMS,
+        minStep,
+        maxStep);
+}
+
+// =====================================================
+// INSTALL CALL PATCH
+// =====================================================
+
+void InstallPatch()
+{
+    BYTE* call = (BYTE*)g_CallPatch;
+
+    DWORD oldProtect;
+
+    VirtualProtect(
+        call,
+        5,
+        PAGE_EXECUTE_READWRITE,
+        &oldProtect);
+
+    // overwrite CALL target
+    call[0] = 0xE8;
+
+    uintptr_t relative = (uintptr_t)My_gmpSetElapsedTime - (g_CallPatch + 5);
+
+    *(uintptr_t*)(call + 1) = relative;
+
+    VirtualProtect(
+        call,
+        5,
+        oldProtect,
+        &oldProtect);
+
+    FlushInstructionCache(
+        GetCurrentProcess(),
+        call,
+        5);
+}
 
 // =====================================================
 // LIMIT FPS
@@ -83,42 +186,11 @@ void LimitFPS()
             Sleep(sleepMs);
     }
     
-    *g_TargetFPS = g_FPSLimit;
+    //*g_TargetFPS = g_FPSLimit;
 
     QueryPerformanceCounter(&g_LastFrame);
 }
 
-// =====================================================
-// UPDATE GAME TIMER
-// =====================================================
-
-void UpdateGameDelta()
-{
-    LARGE_INTEGER now;
-
-    QueryPerformanceCounter(&now);
-
-    double deltaSeconds = (double)(now.QuadPart - g_LastCounter.QuadPart) / (double)g_Freq.QuadPart;
-
-    g_LastCounter = now;
-
-    double deltaMS = deltaSeconds * 1000.0;
-
-    g_Accumulator += deltaMS;
-
-    int finalMS = (int)g_Accumulator;
-
-    g_Accumulator -= finalMS;
-
-    if (finalMS < 1)
-        finalMS = 1;
-
-    if (finalMS > g_MaxDelta)
-        finalMS = g_MaxDelta;
-
-    // Write directly into game timer
-    *g_GameElapsed = finalMS;
-}
 
 
 // =====================================================
@@ -146,10 +218,17 @@ void LoadConfig()
 
     g_FPSLimit = GetPrivateProfileIntA("FPS", "Limit", 60, path);
 
-    g_EnableFix = GetPrivateProfileIntA("Fix", "Enabled", 1, path);
+    g_Enabled = GetPrivateProfileIntA("Fix","Enabled",1, path) != 0;
 
-    g_MaxDelta = GetPrivateProfileIntA("Fix", "ClampMaxDelta", 100, path);
+    g_TargetFPS =(double)GetPrivateProfileIntA("Fix","TargetFPS",60,path);
+
+    if (g_TargetFPS < 1.0)
+        g_TargetFPS = 60.0;
+
+    g_TargetMS = 1000.0 / g_TargetFPS;
+
 }
+
 
 void WriteBytes(void* address, void* data, size_t size) 
 {
@@ -320,24 +399,15 @@ DWORD WINAPI InitThread(LPVOID) {
 
     QueryPerformanceFrequency(&g_Freq);
 
-    QueryPerformanceCounter(&g_LastCounter);
-
     QueryPerformanceCounter(&g_LastFrame);
 
     timeBeginPeriod(1);
-
+    InstallPatch();
+    
     while (true)
     {
-        if (g_EnableFix)
-        {
-            UpdateGameDelta();
-        }
-
-        //*XResolution = cfg.Width;
-        //*YResolution = cfg.Height;
-
         LimitFPS();
-        Sleep(0.5f);
+        Sleep(1);
     }
 
     
