@@ -32,6 +32,9 @@ int g_MaxDelta = 100;
 bool g_Enabled = true;
 double g_TargetFPS = 144.0;
 
+// EMA smoothing factor
+double g_SmoothingFactor = 0.10;
+
 // =====================================================
 // ORIGINAL FUNCTION
 // =====================================================
@@ -54,12 +57,94 @@ static uintptr_t g_CallPatch = 0x0048BD41;
 // TIMING
 // =====================================================
 
-LARGE_INTEGER g_Freq;
-LARGE_INTEGER g_LastFrame;
+LARGE_INTEGER g_QPCFreq;
 
-double g_TargetMS = 6.944444;
+LARGE_INTEGER g_LastFrameCounter;
 
+bool g_TimerInitialized = false;
+
+// smoothed frametime
+double g_SmoothedMS = 0.0;
+
+// fractional integer cadence accumulator
 double g_FractionalAccumulator = 0.0;
+
+// =====================================================
+// FPS LIMITER + FRAME TIMER
+// =====================================================
+
+double WaitAndMeasureFrame()
+{
+    LARGE_INTEGER now;
+
+    QueryPerformanceCounter(&now);
+
+    if (!g_TimerInitialized)
+    {
+        g_LastFrameCounter = now;
+
+        g_TimerInitialized = true;
+
+        return 1000.0 / g_TargetFPS;
+    }
+
+    double targetMS =
+        1000.0 / g_TargetFPS;
+
+    double elapsedMS;
+
+    while (true)
+    {
+        QueryPerformanceCounter(&now);
+
+        elapsedMS =
+            ((double)(
+                now.QuadPart -
+                g_LastFrameCounter.QuadPart)
+                / (double)g_QPCFreq.QuadPart)
+            * 1000.0;
+
+        if (elapsedMS >= targetMS)
+            break;
+
+        // better than Sleep(1)
+        Sleep(0);
+    }
+
+    g_LastFrameCounter = now;
+
+    // clamp broken spikes
+    if (elapsedMS > 250.0)
+        elapsedMS = targetMS;
+
+    return elapsedMS;
+}
+
+// =====================================================
+// SMOOTH FRAME TIME
+// =====================================================
+
+double SmoothFrameTime(
+    double realDeltaMS)
+{
+    if (g_SmoothedMS <= 0.0)
+    {
+        g_SmoothedMS =
+            realDeltaMS;
+    }
+    else
+    {
+        // EMA smoothing
+        g_SmoothedMS =
+            g_SmoothedMS *
+            (1.0 - g_SmoothingFactor)
+            +
+            realDeltaMS *
+            g_SmoothingFactor;
+    }
+
+    return g_SmoothedMS;
+}
 
 // =====================================================
 // HOOK
@@ -71,28 +156,33 @@ uintptr_t g_HookAddress = 0x004407A0;
 
 
 // =====================================================
-// GENERATE STABLE TIMESTEP
+// STABLE INTEGER CADENCE
 // =====================================================
 
-int GenerateNormalizedMS()
+int GenerateNormalizedMS(
+    double smoothMS)
 {
-    int ms = (int)floor(g_TargetMS);
+    int baseMS =
+        (int)floor(smoothMS);
 
-    double frac = g_TargetMS - (double)ms;
+    double frac =
+        smoothMS -
+        (double)baseMS;
 
-    g_FractionalAccumulator += frac;
+    g_FractionalAccumulator +=
+        frac;
 
     if (g_FractionalAccumulator >= 1.0)
     {
-        ms++;
+        baseMS++;
 
         g_FractionalAccumulator -= 1.0;
     }
 
-    if (ms < 1)
-        ms = 1;
+    if (baseMS < 1)
+        baseMS = 1;
 
-    return ms;
+    return baseMS;
 }
 
 // =====================================================
@@ -114,8 +204,32 @@ void __cdecl My_gmpSetElapsedTime(
         return;
     }
 
-    // replace unstable timer values
-    int normalizedMS = GenerateNormalizedMS();
+    // -------------------------------------------------
+    // FPS limiter + real frame timing
+    // -------------------------------------------------
+
+    double realFrameMS =
+        WaitAndMeasureFrame();
+
+    // -------------------------------------------------
+    // Smooth unstable frametimes
+    // -------------------------------------------------
+
+    double smoothMS =
+        SmoothFrameTime(
+            realFrameMS);
+
+    // -------------------------------------------------
+    // Convert to stable integer cadence
+    // -------------------------------------------------
+
+    int normalizedMS =
+        GenerateNormalizedMS(
+            smoothMS);
+
+    // -------------------------------------------------
+    // Feed normalized timestep into GMP
+    // -------------------------------------------------
 
     Real_gmpSetElapsedTime(
         normalizedMS,
@@ -129,7 +243,8 @@ void __cdecl My_gmpSetElapsedTime(
 
 void InstallPatch()
 {
-    BYTE* call = (BYTE*)g_CallPatch;
+    BYTE* call =
+        (BYTE*)g_CallPatch;
 
     DWORD oldProtect;
 
@@ -139,12 +254,15 @@ void InstallPatch()
         PAGE_EXECUTE_READWRITE,
         &oldProtect);
 
-    // overwrite CALL target
+    // CALL My_gmpSetElapsedTime
     call[0] = 0xE8;
 
-    uintptr_t relative = (uintptr_t)My_gmpSetElapsedTime - (g_CallPatch + 5);
+    uintptr_t relative =
+        (uintptr_t)My_gmpSetElapsedTime -
+        (g_CallPatch + 5);
 
-    *(uintptr_t*)(call + 1) = relative;
+    *(uintptr_t*)(call + 1) =
+        relative;
 
     VirtualProtect(
         call,
@@ -157,41 +275,6 @@ void InstallPatch()
         call,
         5);
 }
-
-// =====================================================
-// LIMIT FPS
-// =====================================================
-
-void LimitFPS()
-{
-    if (g_FPSLimit <= 0)
-        return;
-
-    if (g_FPSLimit < 1 || g_FPSLimit > 360)
-        g_FPSLimit = 360;
-
-    LARGE_INTEGER now;
-
-    QueryPerformanceCounter(&now);
-
-    double elapsed = (double)(now.QuadPart - g_LastFrame.QuadPart) / (double)g_Freq.QuadPart;
-
-    double target = 1.0 / (double)g_FPSLimit;
-
-    if (elapsed < target)
-    {
-        DWORD sleepMs = (DWORD)((target - elapsed) * 1000.0);
-
-        if (sleepMs > 0)
-            Sleep(sleepMs);
-    }
-    
-    //*g_TargetFPS = g_FPSLimit;
-
-    QueryPerformanceCounter(&g_LastFrame);
-}
-
-
 
 // =====================================================
 // LOAD CONFIG
@@ -216,16 +299,14 @@ void LoadConfig()
     //cfg.Patch_4GB = GetPrivateProfileIntA("MISC", "Patch_4GB", 1, path);
     cfg.NoMinimize = GetPrivateProfileIntA("DEBUG", "NoMinimize", 0, path);
 
-    g_FPSLimit = GetPrivateProfileIntA("FPS", "Limit", 60, path);
+    //g_Enabled = GetPrivateProfileIntA("Fix","Enabled",1, path) != 0;
 
-    g_Enabled = GetPrivateProfileIntA("Fix","Enabled",1, path) != 0;
-
-    g_TargetFPS =(double)GetPrivateProfileIntA("Fix","TargetFPS",60,path);
+    g_TargetFPS =(double)GetPrivateProfileIntA("FPS","Limit",60,path);
 
     if (g_TargetFPS < 1.0)
         g_TargetFPS = 60.0;
 
-    g_TargetMS = 1000.0 / g_TargetFPS;
+    //g_TargetMS = 1000.0 / g_TargetFPS;
 
 }
 
@@ -387,7 +468,7 @@ void ApplyDebug() {
 //}
 
 DWORD WINAPI InitThread(LPVOID) {
-    //Sleep(500);
+
 
     LoadConfig();
 
@@ -396,23 +477,11 @@ DWORD WINAPI InitThread(LPVOID) {
     ApplyFOV();
 
     ApplyDebug();
-
-    QueryPerformanceFrequency(&g_Freq);
-
-    QueryPerformanceCounter(&g_LastFrame);
+    
+    QueryPerformanceFrequency(&g_QPCFreq);
 
     timeBeginPeriod(1);
-    InstallPatch();
-    
-    while (true)
-    {
-        LimitFPS();
-        Sleep(1);
-    }
-
-    
-    //ApplyMisc();
-
+    InstallPatch();   
 
     return 0;
 }
