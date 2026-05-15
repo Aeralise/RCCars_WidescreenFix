@@ -61,7 +61,10 @@ LARGE_INTEGER g_LastFrame;
 
 void LimitFPS()
 {
-    if (g_FPSLimit <= 0 || g_FPSLimit > 360)
+    if (g_FPSLimit <= 0)
+        return;
+
+    if (g_FPSLimit < 1 || g_FPSLimit > 360)
         g_FPSLimit = 360;
 
     LARGE_INTEGER now;
