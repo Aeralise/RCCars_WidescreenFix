@@ -1,3 +1,5 @@
+<img width="1920" height="1080" alt="RCCars exe Screenshot 2026 06 15 - 12 24 33 54" src="https://github.com/user-attachments/assets/27eb65e5-4de1-4e14-a948-f42ee2373dae" />
+
 # RC Cars WidescreenFix
 
 ASI plugin to improve widescreen support for RC Cars (2003)
