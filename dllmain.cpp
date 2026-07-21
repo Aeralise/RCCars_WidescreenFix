@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 
+
 #pragma comment(lib, "winmm.lib")
 
 struct Config 
@@ -11,7 +12,7 @@ struct Config
     int Width = 1920;
     int Height = 1080;
     int Aspect = 1;
-    int FOV = 100;
+    int FOV = 193;
     int FixHUD = 1;
 
     //int Patch_4GB = 1;
@@ -25,10 +26,9 @@ Config cfg;
 // CONFIG
 // =====================================================
 
-int g_FPSLimit = 60;
 //bool g_EnableFix = true;
 int g_MaxDelta = 100;
-
+volatile int* legacy_TargetFPS = (int*)0x0148FAD0;
 bool g_Enabled = true;
 double g_TargetFPS = 144.0;
 
@@ -88,8 +88,7 @@ double WaitAndMeasureFrame()
         return 1000.0 / g_TargetFPS;
     }
 
-    double targetMS =
-        1000.0 / g_TargetFPS;
+    double targetMS = 1000.0 / g_TargetFPS;
 
     double elapsedMS;
 
@@ -97,12 +96,7 @@ double WaitAndMeasureFrame()
     {
         QueryPerformanceCounter(&now);
 
-        elapsedMS =
-            ((double)(
-                now.QuadPart -
-                g_LastFrameCounter.QuadPart)
-                / (double)g_QPCFreq.QuadPart)
-            * 1000.0;
+        elapsedMS = ((double)(now.QuadPart - g_LastFrameCounter.QuadPart) / (double)g_QPCFreq.QuadPart) * 1000.0;
 
         if (elapsedMS >= targetMS)
             break;
@@ -124,23 +118,16 @@ double WaitAndMeasureFrame()
 // SMOOTH FRAME TIME
 // =====================================================
 
-double SmoothFrameTime(
-    double realDeltaMS)
+double SmoothFrameTime(double realDeltaMS)
 {
     if (g_SmoothedMS <= 0.0)
     {
-        g_SmoothedMS =
-            realDeltaMS;
+        g_SmoothedMS = realDeltaMS;
     }
     else
     {
         // EMA smoothing
-        g_SmoothedMS =
-            g_SmoothedMS *
-            (1.0 - g_SmoothingFactor)
-            +
-            realDeltaMS *
-            g_SmoothingFactor;
+        g_SmoothedMS = g_SmoothedMS * (1.0 - g_SmoothingFactor) + realDeltaMS * g_SmoothingFactor;
     }
 
     return g_SmoothedMS;
@@ -159,18 +146,13 @@ uintptr_t g_HookAddress = 0x004407A0;
 // STABLE INTEGER CADENCE
 // =====================================================
 
-int GenerateNormalizedMS(
-    double smoothMS)
+int GenerateNormalizedMS(double smoothMS)
 {
-    int baseMS =
-        (int)floor(smoothMS);
+    int baseMS = (int)floor(smoothMS);
 
-    double frac =
-        smoothMS -
-        (double)baseMS;
+    double frac = smoothMS - (double)baseMS;
 
-    g_FractionalAccumulator +=
-        frac;
+    g_FractionalAccumulator += frac;
 
     if (g_FractionalAccumulator >= 1.0)
     {
@@ -208,24 +190,19 @@ void __cdecl My_gmpSetElapsedTime(
     // FPS limiter + real frame timing
     // -------------------------------------------------
 
-    double realFrameMS =
-        WaitAndMeasureFrame();
+    double realFrameMS = WaitAndMeasureFrame();
 
     // -------------------------------------------------
     // Smooth unstable frametimes
     // -------------------------------------------------
 
-    double smoothMS =
-        SmoothFrameTime(
-            realFrameMS);
+    double smoothMS = SmoothFrameTime(realFrameMS);
 
     // -------------------------------------------------
     // Convert to stable integer cadence
     // -------------------------------------------------
 
-    int normalizedMS =
-        GenerateNormalizedMS(
-            smoothMS);
+    int normalizedMS = GenerateNormalizedMS(smoothMS);
 
     // -------------------------------------------------
     // Feed normalized timestep into GMP
@@ -243,37 +220,22 @@ void __cdecl My_gmpSetElapsedTime(
 
 void InstallPatch()
 {
-    BYTE* call =
-        (BYTE*)g_CallPatch;
+    BYTE* call = (BYTE*)g_CallPatch;
 
     DWORD oldProtect;
 
-    VirtualProtect(
-        call,
-        5,
-        PAGE_EXECUTE_READWRITE,
-        &oldProtect);
+    VirtualProtect(call,5,PAGE_EXECUTE_READWRITE,&oldProtect);
 
     // CALL My_gmpSetElapsedTime
     call[0] = 0xE8;
 
-    uintptr_t relative =
-        (uintptr_t)My_gmpSetElapsedTime -
-        (g_CallPatch + 5);
+    uintptr_t relative = (uintptr_t)My_gmpSetElapsedTime - (g_CallPatch + 5);
 
-    *(uintptr_t*)(call + 1) =
-        relative;
+    *(uintptr_t*)(call + 1) = relative;
 
-    VirtualProtect(
-        call,
-        5,
-        oldProtect,
-        &oldProtect);
+    VirtualProtect(call,5,oldProtect,&oldProtect);
 
-    FlushInstructionCache(
-        GetCurrentProcess(),
-        call,
-        5);
+    FlushInstructionCache(GetCurrentProcess(),call,5);
 }
 
 // =====================================================
@@ -305,9 +267,6 @@ void LoadConfig()
 
     if (g_TargetFPS < 1.0)
         g_TargetFPS = 60.0;
-
-    //g_TargetMS = 1000.0 / g_TargetFPS;
-
 }
 
 
@@ -353,6 +312,9 @@ void ApplyAspect()
     void* addrH13 = (void*)0x56ECBA;   //mm logo    57
     void* addrH14 = (void*)0x56B8EE;   //mm cr      4F
     void* addrH15 = (void*)0x56B8DE;   //mm 1c      43
+    void* addrH16 = (void*)0x56EC9A;    //MapPosX1
+    void* addrH17 = (void*)0x56ECAA;    //MapPosX2
+
 
     // Значения
     if (cfg.Aspect == 1) { // 16:9
@@ -402,6 +364,34 @@ void ApplyAspect()
             WriteBytes(addrH14, &val0, 1);
             val0 = 0x32;
             WriteBytes(addrH15, &val0, 1);
+            uint8_t nop[6] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
+            WriteBytes((uint16_t*)0x4CA835, nop, 6);
+            WriteBytes((uint16_t*)0x4CA8B1, nop, 6);
+            val0 = 0x54;
+            WriteBytes(addrH16, &val0, 1);
+            WriteBytes(addrH17, &val0, 1);                     
+            
+            //Arrow
+            val0 = 0x37;
+            WriteBytes((uint16_t*)0x5547FA, &val0, 1);
+
+            Sleep(8000);
+
+            val0 = 0x52;
+            //LapPos
+            WriteBytes((uint16_t*)0x149DCEA, &val0, 1);
+            WriteBytes((uint16_t*)0x149DCFA, &val0, 1);
+            WriteBytes((uint16_t*)0x149DCF2, &val0, 1);
+
+            val0 = 0x70;
+            //LapNumPos
+            WriteBytes((uint16_t*)0x149DD02, &val0, 1);
+            WriteBytes((uint16_t*)0x149DD0A, &val0, 1);
+            WriteBytes((uint16_t*)0x149DD12, &val0, 1);
+
+            //OvertakingBRectOffset
+            val0 = 0x50;
+            WriteBytes((uint16_t*)0x149E1FA, &val0, 1);
         }
     }
     else if (cfg.Aspect == 2) { // 4:3
@@ -473,15 +463,25 @@ DWORD WINAPI InitThread(LPVOID) {
     LoadConfig();
 
     ApplyResolution();
-    ApplyAspect();
-    ApplyFOV();
+    
 
     ApplyDebug();
-    
+
     QueryPerformanceFrequency(&g_QPCFreq);
 
     timeBeginPeriod(1);
-    InstallPatch();   
+    InstallPatch();
+
+    ApplyFOV();
+    ApplyAspect();
+    
+
+    while (true)
+    {
+        *legacy_TargetFPS = 0;
+
+        Sleep(1);
+    }
 
     return 0;
 }
