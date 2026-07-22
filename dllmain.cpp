@@ -29,6 +29,7 @@ Config cfg;
 //bool g_EnableFix = true;
 int g_MaxDelta = 100;
 volatile int* legacy_TargetFPS = (int*)0x0148FAD0;
+
 bool g_Enabled = true;
 double g_TargetFPS = 144.0;
 
@@ -318,7 +319,9 @@ void ApplyAspect()
 
     // Значения
     if (cfg.Aspect == 1) { // 16:9
+
         uint8_t val = 0x10;
+
         WriteBytes(addr1, &val, 1);
         WriteBytes(addr2, &val, 1);
         WriteBytes(addr3, &val, 1);
@@ -362,11 +365,13 @@ void ApplyAspect()
             WriteBytes(addrH13, &val0, 1);
             val0 = 0x5A;
             WriteBytes(addrH14, &val0, 1);
+
             val0 = 0x32;
             WriteBytes(addrH15, &val0, 1);
             uint8_t nop[6] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
             WriteBytes((uint16_t*)0x4CA835, nop, 6);
             WriteBytes((uint16_t*)0x4CA8B1, nop, 6);
+
             val0 = 0x54;
             WriteBytes(addrH16, &val0, 1);
             WriteBytes(addrH17, &val0, 1);                     
@@ -374,24 +379,7 @@ void ApplyAspect()
             //Arrow
             val0 = 0x37;
             WriteBytes((uint16_t*)0x5547FA, &val0, 1);
-
-            Sleep(8000);
-
-            val0 = 0x52;
-            //LapPos
-            WriteBytes((uint16_t*)0x149DCEA, &val0, 1);
-            WriteBytes((uint16_t*)0x149DCFA, &val0, 1);
-            WriteBytes((uint16_t*)0x149DCF2, &val0, 1);
-
-            val0 = 0x70;
-            //LapNumPos
-            WriteBytes((uint16_t*)0x149DD02, &val0, 1);
-            WriteBytes((uint16_t*)0x149DD0A, &val0, 1);
-            WriteBytes((uint16_t*)0x149DD12, &val0, 1);
-
-            //OvertakingBRectOffset
-            val0 = 0x50;
-            WriteBytes((uint16_t*)0x149E1FA, &val0, 1);
+            
         }
     }
     else if (cfg.Aspect == 2) { // 4:3
@@ -405,6 +393,27 @@ void ApplyAspect()
         WriteBytes(addr1, val, 2);
         WriteBytes(addr2, val, 2);
         WriteBytes(addr3, val, 2);
+    }
+}
+
+void ApplyLate() {
+    if (cfg.Aspect == 1 && cfg.FixHUD == 1)
+    {
+        uint8_t val0 = 0x52;
+        //LapPos
+        WriteBytes((uint16_t*)0x149DCEA, &val0, 1);
+        WriteBytes((uint16_t*)0x149DCFA, &val0, 1);
+        WriteBytes((uint16_t*)0x149DCF2, &val0, 1);
+
+        val0 = 0x70;
+        //LapNumPos
+        WriteBytes((uint16_t*)0x149DD02, &val0, 1);
+        WriteBytes((uint16_t*)0x149DD0A, &val0, 1);
+        WriteBytes((uint16_t*)0x149DD12, &val0, 1);
+
+        //OvertakingBRectOffset
+        val0 = 0x50;
+        WriteBytes((uint16_t*)0x149E1FA, &val0, 1);
     }
 }
 
@@ -475,10 +484,23 @@ DWORD WINAPI InitThread(LPVOID) {
     ApplyFOV();
     ApplyAspect();
     
+    //uint8_t val0 = 0x52;
+    //Sleep(7000);
+
+    /*char buffer[256];
+    snprintf(buffer, sizeof(buffer),
+        "Memory Address: %p", *lateMem);
+    MessageBoxA(NULL, buffer , NULL, MB_OK);*/
+    
 
     while (true)
     {
         *legacy_TargetFPS = 0;
+
+        unsigned char lateMemValue = *(uint8_t*)0x149DCEA;
+
+        if (lateMemValue == (uint8_t)0x00 || lateMemValue == (uint8_t)0x44)
+            ApplyLate();
 
         Sleep(1);
     }
