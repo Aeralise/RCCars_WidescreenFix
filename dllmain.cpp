@@ -287,34 +287,39 @@ void ApplyAspect()
     void* addr2 = (void*)0x4DD915;
     void* addr3 = (void*)0x4DD9B6;
     // HUD
-    void* addrH1 = (void*)0x56D0C2;     //racePos   23
-    void* addrH2 = (void*)0x56D0DA;     //lapLabel  23
-    void* addrH3 = (void*)0x56D04A;     //splUzel   83
-    void* addrH4 = (void*)0x56D6E2;     //cockL1    97
-    void* addrH5 = (void*)0x56D6DB;     //cockL2    BC
-    void* addrH6 = (void*)0x56D6EA;     //cockR1    34
-    void* addrH7 = (void*)0x56D6F2;     //cockR2    83
-    void* addrH8 = (void*)0x56D78A;     //overtR    23
-    void* addrH9 = (void*)0x56D782;     //overtW    F5
-    void* addrH10 = (void*)0x56D3F2;    //enum      62
-    void* addrH11 = (void*)0x56ECA2;    //map 1     54
-    void* addrH12 = (void*)0x56ECB2;    //map 2     54
-    void* addrHM1 = (void*)0x56D282;    //msgPause  A3
-    void* addrHM2 = (void*)0x56D27A;    //msgLow    23
-    void* addrHM3 = (void*)0x56D28A;    //msgWrong  23
-    void* addrHM4 = (void*)0x56D292;    //msgHit    A3
-    void* addrHM5 = (void*)0x56D29A;    //msgSmHit  A3
-    void* addrHM6 = (void*)0x56D2A2;    //3         23
-    void* addrHM7 = (void*)0x56D2AA;    //2         23
-    void* addrHM8 = (void*)0x56D2B2;    //1         BD
-    void* addrHM9 = (void*)0x56D2BA;    //finish    C6
-    void* addrHM10 = (void*)0x56D2C2;   //start     F5
-    void* addrHM11 = (void*)0x56D2CA;   //bestLap   23
-    void* addrH13 = (void*)0x56ECBA;   //mm logo    57
-    void* addrH14 = (void*)0x56B8EE;   //mm cr      4F
-    void* addrH15 = (void*)0x56B8DE;   //mm 1c      43
-    void* addrH16 = (void*)0x56EC9A;    //MapPosX1
-    void* addrH17 = (void*)0x56ECAA;    //MapPosX2
+    void* addr_racePos =        (void*)0x56D0C2;     //racePos   23
+    void* addr_lapLabel =       (void*)0x56D0DA;     //lapLabel  23
+    void* addr_splUzel =        (void*)0x56D04A;     //splUzel   83
+    void* addr_cockL1 =         (void*)0x56D6E2;     //cockL1    97
+    void* addr_cockL2 =         (void*)0x56D6DB;     //cockL2    BC
+    void* addr_cockR1 =         (void*)0x56D6EA;     //cockR1    34
+    void* addr_cockR2 =         (void*)0x56D6F2;     //cockR2    83
+    void* addr_overtR =         (void*)0x56D78A;     //overtR    23
+    void* addr_overtL =         (void*)0x56D782;     //overtW    F5
+    void* addr_enum =           (void*)0x56D3F2;    //enum      62
+    void* addr_map1 =           (void*)0x56ECA2;    //map 1     54
+    void* addr_map2 =           (void*)0x56ECB2;    //map 2     54
+    void* addr_msg_Pause =      (void*)0x56D282;    //msgPause  A3
+    void* addr_msg_Low =        (void*)0x56D27A;    //msgLow    23
+    void* addr_msg_Wrong =      (void*)0x56D28A;    //msgWrong  23
+    void* addr_msg_Hit =        (void*)0x56D292;    //msgHit    A3
+    void* addr_msg_SmashHit =   (void*)0x56D29A;    //msgSmHit  A3
+    void* addr_msg_3 =          (void*)0x56D2A2;    //3         23
+    void* addr_msg_2 =          (void*)0x56D2AA;    //2         23
+    void* addr_msg_1 =          (void*)0x56D2B2;    //1         BD
+    void* addr_msg_Finish =     (void*)0x56D2BA;    //finish    C6
+    void* addr_msg_Start =      (void*)0x56D2C2;   //start     F5
+    void* addr_msg_BestLap =    (void*)0x56D2CA;   //bestLap   23
+    void* addr_mm_logo =        (void*)0x56ECBA;   //mm logo    57
+    void* addr_logoCR =         (void*)0x56B8EE;   //mm cr      4F
+    void* addr_logo1C =         (void*)0x56B8DE;   //mm 1c      43
+    void* addr_MapPosX1 =       (void*)0x56EC9A;    //MapPosX1
+    void* addr_MapPosX2 =       (void*)0x56ECAA;    //MapPosX2
+    void* addr_logoRC1 =        (void*)0x56B8BE;   //mm RC1     23
+    void* addr_logoRC2 =        (void*)0x56B8C6;   //mm RC2     4c
+
+    //void* addr_load_map1 = (void*)0x5708A6;   4c  -   7f
+    //void* addr_load_map1 = (void*)0x5708AE;   57  -   48
 
 
     // Значения
@@ -326,55 +331,63 @@ void ApplyAspect()
         WriteBytes(addr2, &val, 1);
         WriteBytes(addr3, &val, 1);
 
-        if (cfg.FixHUD == 1) {
+        if (cfg.FixHUD == 1) 
+        {
             uint8_t val0 = 0x00;
-            WriteBytes(addrH1, &val0, 1);
-            WriteBytes(addrH2, &val0, 1);
-            WriteBytes(addrH3, &val0, 1);
-            WriteBytes(addrH8, &val0, 1);
-            WriteBytes(addrHM2, &val0, 1);
-            WriteBytes(addrHM3, &val0, 1);
-            WriteBytes(addrHM6, &val0, 1);
-            WriteBytes(addrHM7, &val0, 1);
-            WriteBytes(addrHM11, &val0, 1);
+            WriteBytes(addr_racePos,    &val0, 1);
+            WriteBytes(addr_lapLabel,   &val0, 1);
+            WriteBytes(addr_splUzel,    &val0, 1);
+            WriteBytes(addr_overtR,     &val0, 1);
+            WriteBytes(addr_msg_Low,    &val0, 1);
+            WriteBytes(addr_msg_Wrong,  &val0, 1);
+            WriteBytes(addr_msg_3,      &val0, 1);
+            WriteBytes(addr_msg_2,      &val0, 1);
+            WriteBytes(addr_msg_BestLap, &val0, 1);
             val0 = 0x70;
-            WriteBytes(addrH4, &val0, 1);
+            WriteBytes(addr_cockL1,     &val0, 1);
             val0 = 0xBB;
-            WriteBytes(addrH5, &val0, 1);
+            WriteBytes(addr_cockL2,     &val0, 1);
             val0 = 0x45;
-            WriteBytes(addrH6, &val0, 1);
+            WriteBytes(addr_cockR1,     &val0, 1);
             val0 = 0x81;
-            WriteBytes(addrH7, &val0, 1);
+            WriteBytes(addr_cockR2,     &val0, 1);
             val0 = 0xB8;
-            WriteBytes(addrH9, &val0, 1);
-            WriteBytes(addrHM10, &val0, 1);
+            WriteBytes(addr_overtL,     &val0, 1);
+            WriteBytes(addr_msg_Start,  &val0, 1);
             val0 = 0x31;
-            WriteBytes(addrH10, &val0, 1);
+            WriteBytes(addr_enum,       &val0, 1);
             val0 = 0x80;
-            WriteBytes(addrHM1, &val0, 1);
-            WriteBytes(addrHM4, &val0, 1);
-            WriteBytes(addrHM5, &val0, 1);
+            WriteBytes(addr_msg_Pause,  &val0, 1);
+            WriteBytes(addr_msg_Hit,    &val0, 1);
+            WriteBytes(addr_msg_SmashHit, &val0, 1);
             val0 = 0x8E;
-            WriteBytes(addrHM8, &val0, 1);
+            WriteBytes(addr_msg_1,      &val0, 1);
             val0 = 0x94;
-            WriteBytes(addrHM9, &val0, 1);
+            WriteBytes(addr_msg_Finish, &val0, 1);
             val0 = 0x20;
-            WriteBytes(addrH11, &val0, 1);
-            WriteBytes(addrH12, &val0, 1);
+            WriteBytes(addr_map1,       &val0, 1);
+            WriteBytes(addr_map2,       &val0, 1);
             val0 = 0x61;
-            WriteBytes(addrH13, &val0, 1);
+            WriteBytes(addr_mm_logo,    &val0, 1);
             val0 = 0x5A;
-            WriteBytes(addrH14, &val0, 1);
+            WriteBytes(addr_logoCR,     &val0, 1);
 
-            val0 = 0x32;
-            WriteBytes(addrH15, &val0, 1);
+            val0 = 0x1d;
+            WriteBytes(addr_logo1C,     &val0, 1);
+
             uint8_t nop[6] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
             WriteBytes((uint16_t*)0x4CA835, nop, 6);
             WriteBytes((uint16_t*)0x4CA8B1, nop, 6);
 
+
             val0 = 0x54;
-            WriteBytes(addrH16, &val0, 1);
-            WriteBytes(addrH17, &val0, 1);                     
+            WriteBytes(addr_MapPosX1,   &val0, 1);
+            WriteBytes(addr_MapPosX2,   &val0, 1);              
+
+            val0 = 0x83;
+            WriteBytes(addr_logoRC1,    &val0, 1);
+            val0 = 0x3c;
+            WriteBytes(addr_logoRC2,    &val0, 1);
             
             //Arrow
             val0 = 0x37;
