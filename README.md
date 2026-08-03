@@ -1,4 +1,4 @@
-<img width="1920" height="1080" alt="RCCars exe Screenshot 2026 06 15 - 12 24 33 54" src="https://github.com/user-attachments/assets/27eb65e5-4de1-4e14-a948-f42ee2373dae" />
+<img width="1280" height="720" alt="rccarsws" src="https://github.com/user-attachments/assets/b54adc04-0fcf-4f09-ad33-0c517b462609" />
 
 # RC Cars WidescreenFix
 
