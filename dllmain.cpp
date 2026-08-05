@@ -255,6 +255,12 @@ void LoadConfig()
 
     cfg.Width = GetPrivateProfileIntA("MAIN", "Width", 1920, path);
     cfg.Height = GetPrivateProfileIntA("MAIN", "Height", 1080, path);
+
+    if (cfg.Width <= 0)
+        cfg.Width = GetSystemMetrics(SM_CXSCREEN);
+    if (cfg.Height <= 0)
+        cfg.Height = GetSystemMetrics(SM_CYSCREEN);
+    
     cfg.Aspect = GetPrivateProfileIntA("MAIN", "Aspect", 1, path);
     cfg.FOV = GetPrivateProfileIntA("MAIN", "FOV", 100, path);
     cfg.FixHUD = GetPrivateProfileIntA("MAIN", "FixHUD", 1, path);
@@ -287,40 +293,56 @@ void ApplyAspect()
     void* addr2 = (void*)0x4DD915;
     void* addr3 = (void*)0x4DD9B6;
     // HUD
-    void* addr_racePos =        (void*)0x56D0C2;     //racePos   23
-    void* addr_lapLabel =       (void*)0x56D0DA;     //lapLabel  23
-    void* addr_splUzel =        (void*)0x56D04A;     //splUzel   83
-    void* addr_cockL1 =         (void*)0x56D6E2;     //cockL1    97
-    void* addr_cockL2 =         (void*)0x56D6DB;     //cockL2    BC
-    void* addr_cockR1 =         (void*)0x56D6EA;     //cockR1    34
-    void* addr_cockR2 =         (void*)0x56D6F2;     //cockR2    83
-    void* addr_overtR =         (void*)0x56D78A;     //overtR    23
-    void* addr_overtL =         (void*)0x56D782;     //overtW    F5
-    void* addr_enum =           (void*)0x56D3F2;    //enum      62
-    void* addr_map1 =           (void*)0x56ECA2;    //map 1     54
-    void* addr_map2 =           (void*)0x56ECB2;    //map 2     54
-    void* addr_msg_Pause =      (void*)0x56D282;    //msgPause  A3
-    void* addr_msg_Low =        (void*)0x56D27A;    //msgLow    23
-    void* addr_msg_Wrong =      (void*)0x56D28A;    //msgWrong  23
-    void* addr_msg_Hit =        (void*)0x56D292;    //msgHit    A3
-    void* addr_msg_SmashHit =   (void*)0x56D29A;    //msgSmHit  A3
-    void* addr_msg_3 =          (void*)0x56D2A2;    //3         23
-    void* addr_msg_2 =          (void*)0x56D2AA;    //2         23
-    void* addr_msg_1 =          (void*)0x56D2B2;    //1         BD
-    void* addr_msg_Finish =     (void*)0x56D2BA;    //finish    C6
-    void* addr_msg_Start =      (void*)0x56D2C2;   //start     F5
-    void* addr_msg_BestLap =    (void*)0x56D2CA;   //bestLap   23
-    void* addr_mm_logo =        (void*)0x56ECBA;   //mm logo    57
-    void* addr_logoCR =         (void*)0x56B8EE;   //mm cr      4F
-    void* addr_logo1C =         (void*)0x56B8DE;   //mm 1c      43
+    void* addr_racePos =        (void*)0x56D0C2;     //racePos   0x23
+    void* addr_lapLabel =       (void*)0x56D0DA;     //lapLabel  0x23
+    void* addr_splUzel =        (void*)0x56D04A;     //splUzel   0x83
+    void* addr_cockL1 =         (void*)0x56D6E2;     //cockL1    0x97
+    void* addr_cockL2 =         (void*)0x56D6DB;     //cockL2    0xBC
+    void* addr_cockR1 =         (void*)0x56D6EA;     //cockR1    0x34
+    void* addr_cockR2 =         (void*)0x56D6F2;     //cockR2    0x83
+    void* addr_overtR =         (void*)0x56D78A;     //overtR    0x23
+    void* addr_overtL =         (void*)0x56D782;     //overtW    0xF5
+    void* addr_enum =           (void*)0x56D3F2;    //enum       0x62
+    void* addr_map1 =           (void*)0x56ECA2;    //map 1      0x54
+    void* addr_map2 =           (void*)0x56ECB2;    //map 2      0x54
+    void* addr_msg_Pause =      (void*)0x56D282;    //msgPause   0xA3
+    void* addr_msg_Low =        (void*)0x56D27A;    //msgLow     0x23
+    void* addr_msg_Wrong =      (void*)0x56D28A;    //msgWrong   0x23
+    void* addr_msg_Hit =        (void*)0x56D292;    //msgHit     0xA3
+    void* addr_msg_SmashHit =   (void*)0x56D29A;    //msgSmHit   0xA3
+    void* addr_msg_3 =          (void*)0x56D2A2;    //3          0x23
+    void* addr_msg_2 =          (void*)0x56D2AA;    //2          0x23
+    void* addr_msg_1 =          (void*)0x56D2B2;    //1          0xBD
+    void* addr_msg_Finish =     (void*)0x56D2BA;    //finish     0xC6
+    void* addr_msg_Start =      (void*)0x56D2C2;   //start       0xF5
+    void* addr_msg_BestLap =    (void*)0x56D2CA;   //bestLap     0x23
+    void* addr_mm_logo =        (void*)0x56ECBA;   //mm logo     0x57
+    void* addr_logoCR =         (void*)0x56B8EE;   //mm cr       0x4F
+    void* addr_logo1C =         (void*)0x56B8DE;   //mm 1c       0x43
     void* addr_MapPosX1 =       (void*)0x56EC9A;    //MapPosX1
     void* addr_MapPosX2 =       (void*)0x56ECAA;    //MapPosX2
-    void* addr_logoRC1 =        (void*)0x56B8BE;   //mm RC1     23
-    void* addr_logoRC2 =        (void*)0x56B8C6;   //mm RC2     4c
+    void* addr_logoRC1 =        (void*)0x56B8BE;   //mm RC1      0x23
+    void* addr_logoRC2 =        (void*)0x56B8C6;   //mm RC2      0x4c
 
     //void* addr_load_map1 = (void*)0x5708A6;   4c  -   7f
     //void* addr_load_map1 = (void*)0x5708AE;   57  -   48
 
+    if (cfg.Aspect == 0)
+    {
+        float decAspect = (float)cfg.Width / cfg.Height;
+        if (decAspect >= 1.32f && decAspect <= 1.34f)       //16:9
+            cfg.Aspect = 2;
+        else if (decAspect >= 1.76f && decAspect <= 1.78f)  //4:3
+            cfg.Aspect = 1;
+        else if (decAspect >= 3.54f && decAspect <= 3.56f)  //32:9
+            cfg.Aspect = 3;
+        else if (decAspect >= 2.36f && decAspect <= 2.39f)  //21:9
+            cfg.Aspect = 4;
+        else if (decAspect >= 1.59f && decAspect <= 1.61f)  //16:10
+            cfg.Aspect = 5;
+        else if (decAspect >= 1.24f && decAspect <= 1.26f)  //5:4
+            cfg.Aspect = 6;
+    }
 
     // Значения
     if (cfg.Aspect == 1) { // 16:9
@@ -375,10 +397,9 @@ void ApplyAspect()
             val0 = 0x1d;
             WriteBytes(addr_logo1C,     &val0, 1);
 
-            uint8_t nop[6] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
+            uint8_t nop[6] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };    //disable function
             WriteBytes((uint16_t*)0x4CA835, nop, 6);
             WriteBytes((uint16_t*)0x4CA8B1, nop, 6);
-
 
             val0 = 0x54;
             WriteBytes(addr_MapPosX1,   &val0, 1);
@@ -391,8 +412,7 @@ void ApplyAspect()
             
             //Arrow
             val0 = 0x37;
-            WriteBytes((uint16_t*)0x5547FA, &val0, 1);
-            
+            WriteBytes((uint16_t*)0x5547FA, &val0, 1);           
         }
     }
     else if (cfg.Aspect == 2) { // 4:3
@@ -406,6 +426,24 @@ void ApplyAspect()
         WriteBytes(addr1, val, 2);
         WriteBytes(addr2, val, 2);
         WriteBytes(addr3, val, 2);
+    }
+    else if (cfg.Aspect == 4) { // 21:9
+        uint8_t val[2] = { 0xD7, 0x3E };
+        WriteBytes(addr1, val, 2);
+        WriteBytes(addr2, val, 2);
+        WriteBytes(addr3, val, 2);
+    }
+    else if (cfg.Aspect == 5) { // 16:10
+        uint8_t val = 0x20;
+        WriteBytes(addr1, &val, 1);
+        WriteBytes(addr2, &val, 1);
+        WriteBytes(addr3, &val, 1);
+    }
+    else if (cfg.Aspect == 6) { // 5:4
+        uint8_t val = 0x50;
+        WriteBytes(addr1, &val, 1);
+        WriteBytes(addr2, &val, 1);
+        WriteBytes(addr3, &val, 1);
     }
 }
 
@@ -434,12 +472,14 @@ void ApplyFOV() {
     void* addr = (void*)0x405D6F;
 
     int value = cfg.FOV;
+    if (value > 255)
+        value = 255;
     WriteBytes(addr, &value, 1);
 }
 
 void ApplyResolution() {
     uint16_t width = (uint16_t)cfg.Width;
-    uint16_t height = (uint16_t)cfg.Height;
+    uint16_t height = (uint16_t)cfg.Height;   
 
     uint16_t* width1 = (uint16_t*)0x4A6A0D;
     uint16_t* width2 = (uint16_t*)0x4A69D3;
@@ -486,7 +526,6 @@ DWORD WINAPI InitThread(LPVOID) {
 
     ApplyResolution();
     
-
     ApplyDebug();
 
     QueryPerformanceFrequency(&g_QPCFreq);
