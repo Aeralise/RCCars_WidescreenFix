@@ -12,7 +12,8 @@ struct Config
     int Width = 1920;
     int Height = 1080;
     int Aspect = 1;
-    int FOV = 193;
+    int FixFOV = 1;
+    double CustomFOV = 193;
     int FixHUD = 1;
 
     //int Patch_4GB = 1;
@@ -243,7 +244,7 @@ void InstallPatch()
 // LOAD CONFIG
 // =====================================================
 
-void LoadConfig() 
+void LoadConfig()
 {
     char path[MAX_PATH];
     GetModuleFileNameA(NULL, path, MAX_PATH);
@@ -260,9 +261,10 @@ void LoadConfig()
         cfg.Width = GetSystemMetrics(SM_CXSCREEN);
     if (cfg.Height <= 0)
         cfg.Height = GetSystemMetrics(SM_CYSCREEN);
-    
+
     cfg.Aspect = GetPrivateProfileIntA("MAIN", "Aspect", 1, path);
-    cfg.FOV = GetPrivateProfileIntA("MAIN", "FOV", 100, path);
+    cfg.FixFOV = GetPrivateProfileIntA("MAIN", "FixFOV", 1, path);
+    cfg.CustomFOV = GetPrivateProfileIntA("MAIN", "CustomFOV", 80, path);
     cfg.FixHUD = GetPrivateProfileIntA("MAIN", "FixHUD", 1, path);
 
     //cfg.Patch_4GB = GetPrivateProfileIntA("MISC", "Patch_4GB", 1, path);
@@ -270,10 +272,18 @@ void LoadConfig()
 
     //g_Enabled = GetPrivateProfileIntA("Fix","Enabled",1, path) != 0;
 
-    g_TargetFPS =(double)GetPrivateProfileIntA("FPS","Limit",60,path);
+    g_TargetFPS = (double)GetPrivateProfileIntA("FPS", "Limit", 60, path);
 
-    if (g_TargetFPS < 1.0)
-        g_TargetFPS = 60.0;
+    DEVMODE dm = { 0 };
+    dm.dmSize = sizeof(DEVMODE);
+    double displayHz = 60;
+    if (EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS, &dm))
+        displayHz = (double)dm.dmDisplayFrequency;
+
+    if (g_TargetFPS == 0)
+        g_TargetFPS = displayHz;
+    if (g_TargetFPS < 0 || g_TargetFPS > 600)
+        g_TargetFPS = 60;
 }
 
 
@@ -470,8 +480,26 @@ void ApplyLate() {
 
 void ApplyFOV() {
     void* addr = (void*)0x405D6F;
+    int value = (int)(cfg.CustomFOV * 2);
 
-    int value = cfg.FOV;
+    if (cfg.FixFOV == 1)
+    {
+        if (cfg.Aspect == 1)    //16:9
+            value = (int)(96.5 * 2);
+        if (cfg.Aspect == 2)    //4:3
+            value = 80 * 2;
+        if (cfg.Aspect == 3)    //32:9
+            value = 132 * 2;
+        if (cfg.Aspect == 4)    //21:9
+            value = (int)(112.5 * 2);
+        if (cfg.Aspect == 5)    //16:10
+            value = (int)(90.5 * 2);
+        if (cfg.Aspect == 6)    //5:4
+            value = 80 * 2;
+    }
+    else
+        value = (int)(cfg.CustomFOV * 2);
+
     if (value > 255)
         value = 255;
     WriteBytes(addr, &value, 1);
@@ -532,9 +560,9 @@ DWORD WINAPI InitThread(LPVOID) {
 
     timeBeginPeriod(1);
     InstallPatch();
-
-    ApplyFOV();
+    
     ApplyAspect();
+    ApplyFOV();
     
     //uint8_t val0 = 0x52;
     //Sleep(7000);
