@@ -47,13 +47,13 @@
     <ClCompile Include="include\buffer.c">
       <Filter>Исходные файлы</Filter>
     </ClCompile>
-    <ClCompile Include="include\hook.c">
-      <Filter>Исходные файлы</Filter>
-    </ClCompile>
     <ClCompile Include="include\trampoline.c">
       <Filter>Исходные файлы</Filter>
     </ClCompile>
     <ClCompile Include="include\hde\hde32.c">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="include\hook.c">
       <Filter>Исходные файлы</Filter>
     </ClCompile>
   </ItemGroup>

@@ -3,8 +3,9 @@
 #include <mmsystem.h>
 #include <chrono>
 #include <cmath>
+#include "MinHook.h"
 
-
+#pragma comment(lib, "libMinHook.x86.lib")
 #pragma comment(lib, "winmm.lib")
 
 struct Config 
@@ -22,6 +23,8 @@ struct Config
 };
 
 Config cfg;
+
+#pragma region FPS_fix
 
 // =====================================================
 // CONFIG
@@ -240,6 +243,8 @@ void InstallPatch()
     FlushInstructionCache(GetCurrentProcess(),call,5);
 }
 
+#pragma endregion
+
 // =====================================================
 // LOAD CONFIG
 // =====================================================
@@ -286,7 +291,6 @@ void LoadConfig()
         g_TargetFPS = 60;
 }
 
-
 void WriteBytes(void* address, void* data, size_t size) 
 {
     DWORD oldProtect;
@@ -314,6 +318,7 @@ void ApplyAspect()
     void* addr_overtL =         (void*)0x56D782;     //overtW    0xF5
     void* addr_enum =           (void*)0x56D3F2;    //enum       0x62
     void* addr_map1 =           (void*)0x56ECA2;    //map 1      0x54
+
     void* addr_map2 =           (void*)0x56ECB2;    //map 2      0x54
     void* addr_msg_Pause =      (void*)0x56D282;    //msgPause   0xA3
     void* addr_msg_Low =        (void*)0x56D27A;    //msgLow     0x23
@@ -327,6 +332,7 @@ void ApplyAspect()
     void* addr_msg_Start =      (void*)0x56D2C2;   //start       0xF5
     void* addr_msg_BestLap =    (void*)0x56D2CA;   //bestLap     0x23
     void* addr_mm_logo =        (void*)0x56ECBA;   //mm logo     0x57
+    void* addr_mm_logo2 =       (void*)0x56E982;   //mm logo2    0x57
     void* addr_logoCR =         (void*)0x56B8EE;   //mm cr       0x4F
     void* addr_logo1C =         (void*)0x56B8DE;   //mm 1c       0x43
     void* addr_MapPosX1 =       (void*)0x56EC9A;    //MapPosX1
@@ -334,12 +340,16 @@ void ApplyAspect()
     void* addr_logoRC1 =        (void*)0x56B8BE;   //mm RC1      0x23
     void* addr_logoRC2 =        (void*)0x56B8C6;   //mm RC2      0x4c
 
+    void* addr_map1test = (void*)0x56ECA0;    //map 1      0x54
+
     //void* addr_load_map1 = (void*)0x5708A6;   4c  -   7f
     //void* addr_load_map1 = (void*)0x5708AE;   57  -   48
+    
+    float decAspect = (float)cfg.Width / cfg.Height;
 
     if (cfg.Aspect == 0)
     {
-        float decAspect = (float)cfg.Width / cfg.Height;
+        
         if (decAspect >= 1.32f && decAspect <= 1.34f)       //16:9
             cfg.Aspect = 2;
         else if (decAspect >= 1.76f && decAspect <= 1.78f)  //4:3
@@ -361,7 +371,7 @@ void ApplyAspect()
 
         WriteBytes(addr1, &val, 1);
         WriteBytes(addr2, &val, 1);
-        WriteBytes(addr3, &val, 1);
+        WriteBytes(addr3, &val, 1);            
 
         if (cfg.FixHUD == 1) 
         {
@@ -401,6 +411,7 @@ void ApplyAspect()
             WriteBytes(addr_map2,       &val0, 1);
             val0 = 0x61;
             WriteBytes(addr_mm_logo,    &val0, 1);
+            WriteBytes(addr_mm_logo2,   &val0, 1);
             val0 = 0x5A;
             WriteBytes(addr_logoCR,     &val0, 1);
 
@@ -441,7 +452,7 @@ void ApplyAspect()
         uint8_t val[2] = { 0xD7, 0x3E };
         WriteBytes(addr1, val, 2);
         WriteBytes(addr2, val, 2);
-        WriteBytes(addr3, val, 2);
+        WriteBytes(addr3, val, 2);       
     }
     else if (cfg.Aspect == 5) { // 16:10
         uint8_t val = 0x20;
@@ -557,7 +568,7 @@ DWORD WINAPI InitThread(LPVOID) {
     ApplyDebug();
 
     QueryPerformanceFrequency(&g_QPCFreq);
-
+    
     timeBeginPeriod(1);
     InstallPatch();
     
