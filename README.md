@@ -21,4 +21,4 @@ ASI plugin to improve widescreen support for RC Cars (2003)
 ## Install & Usage
 
 1. Put the plugin files [(see Releases page)](https://github.com/Aeralise/RCCars_WidescreenFix/releases) and (!) [ThirteenAG's Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) (dinput8.dll for example) to game directory.
-2. By default, almost all settings is automated, but if you want to change it, open .ini file and set **Width and Height** of your display resolution, choose the aspect (16:9 by default) and FOV (193 is default for 16:9). In game settings, choose the same resolution you set in the .ini.
+2. By default, almost all settings is automated, but if you want to change it, open .ini file and set **Width and Height** of your display resolution, choose the aspect (16:9 by default) and FOV (96.5 is default for 16:9). In game settings, choose the same resolution you set in the .ini.
