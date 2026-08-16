@@ -152,7 +152,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="d3d9.h" />
+    <ClInclude Include="dllmain.h" />
+    <ClInclude Include="fix_core.h" />
     <ClInclude Include="framework.h" />
+    <ClInclude Include="game_addresses.h" />
+    <ClInclude Include="hud_fix.h" />
     <ClInclude Include="include\buffer.h" />
     <ClInclude Include="include\MinHook.h" />
     <ClInclude Include="include\trampoline.h" />
@@ -161,6 +165,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="fix_core.cpp" />
+    <ClCompile Include="hud_fix.cpp" />
     <ClCompile Include="include\buffer.c" />
     <ClCompile Include="include\hde\hde32.c" />
     <ClCompile Include="include\hook.c" />
